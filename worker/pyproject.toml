@@ -1,0 +1,15 @@
+[project]
+name = "kioku-worker"
+version = "0.1.0"
+description = "Kioku transcription/queue worker"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "python-dotenv>=1.0",
+    "psycopg[binary]>=3.2",
+    "uvicorn>=0.30",
+]
+
+# Days 4–6: the local-engine extra (faster-whisper) and the Groq-backed paid
+# engine path are added here after their wheels + licenses are verified — no
+# speculative pins before then.
