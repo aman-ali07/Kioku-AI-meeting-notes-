@@ -10,7 +10,9 @@ services:
       POSTGRES_PASSWORD: kioku
       POSTGRES_DB: kioku
     ports:
-      - "127.0.0.1:5432:5432"
+      # Host 5432 is commonly owned by a pre-existing local postgres (as on this
+      # machine) — dev db is exposed on 5433 instead of fighting for the port.
+      - "127.0.0.1:5433:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:

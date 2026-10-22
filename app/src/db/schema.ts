@@ -7,7 +7,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { AdapterAccountType } from "next-auth/adapters";
+import type { AdapterAccount } from "next-auth/adapters";
 
 // ---------------------------------------------------------------------------
 // Auth.js (next-auth v4) adapter tables.
@@ -29,7 +29,7 @@ export const accounts = pgTable(
     userId: text("userId")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    type: text("type").$type<AdapterAccountType>().notNull(),
+    type: text("type").$type<AdapterAccount["type"]>().notNull(),
     provider: text("provider").notNull(),
     providerAccountId: text("providerAccountId").notNull(),
     refreshToken: text("refreshToken"),

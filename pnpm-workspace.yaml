@@ -1,2 +1,9 @@
 packages:
   - app
+
+# Only these two packages may run postinstall scripts (pnpm 12 default-deny).
+# esbuild: drizzle-kit's bundler needs its native binary. sharp: Next.js image
+# optimizer. Both canonical, MIT/Apache-2.0 — allowlisted after license review.
+allowBuilds:
+  esbuild: true
+  sharp: true
