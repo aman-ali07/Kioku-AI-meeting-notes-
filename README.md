@@ -8,7 +8,7 @@ action items → searchable team dashboard with shareable meeting pages.
 (setup, uptime, billing), never capability — nothing is gated from the open repo.
 
 - Design & 30-day execution plan: [`docs/specs/2026-10-22-kioku-design.md`](docs/specs/2026-10-22-kioku-design.md)
-- Status: scaffold (Days 1–3 of the plan)
+- Status: scaffold complete (Days 1–3 of the plan) — register+login green locally; transcription pipeline next (Days 4–6)
 - License pending (plan Day 7): AGPL-3.0 core, TRADEMARKS.md to follow.
 
 ## Layout
@@ -16,8 +16,16 @@ action items → searchable team dashboard with shareable meeting pages.
 | Path | What it is |
 |---|---|
 | `app/` | Next.js 15 web app (TypeScript, Tailwind, Drizzle, Auth.js magic-link + env-gated Google) |
-| `worker/` | Python 3.11 worker (FastAPI) — transcription pipeline (Days 4–6) |
+| `worker/` | Python 3.11 worker (FastAPI `/healthz`) — transcription pipeline lands Days 4–6 |
 | `docs/specs/` | Approved product spec |
+| `docs/` + root `AGENTS.md`, `*.md` | Agent/human documentation set (see AGENTS.md for the routing map) |
+
+## Project documentation
+
+Start with `AGENTS.md` (routing map). Key files: `PRD.md` (what & why),
+`ARCHITECTURE.md` (how), `TASKS.md` (status), `DATABASE.md`, `SECURITY.md`,
+`TESTING.md`, `DEPLOYMENT.md`, `TECH_STACK.md`, `docs/DECISIONS.md`,
+`CHANGELOG.md`, `KNOWN_ISSUES.md`.
 
 ## Quickstart (dev)
 
@@ -39,8 +47,15 @@ Magic-link emails are printed to the dev-server console (no SMTP needed locally)
 Sign in at http://localhost:3000/login, open the link from the console — you're
 in, with a "Personal" workspace provisioned on first sign-in.
 
+Provable in one command (dev server running):
+
+```sh
+bash scripts/smoke-auth.sh   # healthz → providers → magic link → session → dashboard
+```
+
 `GET /healthz` — `{ status, checks: { db, storage, … } }`; 503 when the db is
-down. Storage and worker checks are staged as `not-provisioned (Days 4–6)`.
+down. Storage and worker checks are staged as `not-provisioned (Days 4–6)` —
+same contract exists on the worker (`:8009/healthz`).
 
 **Environment:** each package owns its `.env` (Next.js loads it from its own
 directory; the worker reads its own). Config comes from the environment only —
