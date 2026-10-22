@@ -71,3 +71,5 @@ Schema lives in `app/src/db/schema.ts`. After a schema change:
 pnpm db:generate    # schema → SQL in app/drizzle/ (committed, no DB needed)
 pnpm db:migrate     # apply pending migrations to the running Postgres
 ```
+# Kioku-AI-meeting-notes-
+# Kioku-AI-meeting-notes-
