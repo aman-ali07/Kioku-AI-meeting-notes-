@@ -1,5 +1,7 @@
 import {
+  index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -115,3 +117,98 @@ export const workspaceMembers = pgTable(
     ),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Meeting pipeline — plan §7 (Days 4–6). Meetings own an audio key; segments
+// stream in from the worker; jobs is the Postgres-only queue.
+// ---------------------------------------------------------------------------
+
+export const MEETING_STATUSES = [
+  "uploaded",
+  "queued",
+  "processing",
+  "completed",
+  "low_confidence",
+  "failed",
+] as const;
+export type MeetingStatus = (typeof MEETING_STATUSES)[number];
+
+export const meetings = pgTable(
+  "meetings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    status: text("status")
+      .$type<MeetingStatus>()
+      .notNull()
+      .default("uploaded"),
+    source: text("source")
+      .$type<"upload" | "recording">()
+      .notNull()
+      .default("upload"),
+    // Storage key in the workspace's audio store (set once the file lands).
+    audioKey: text("audio_key"),
+    // Filled by the worker's ffprobe step; null while unknown.
+    durationMs: integer("duration_ms"),
+    createdBy: text("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+  },
+  (m) => [index("meetings_ws_created_idx").on(m.workspaceId, m.createdAt)],
+);
+export const transcriptSegments = pgTable(
+  "transcript_segments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    idx: integer("idx").notNull(),
+    startMs: integer("start_ms").notNull(),
+    endMs: integer("end_ms").notNull(),
+    // Manual split for now (spec: no diarization on CPU); worker writes 0.
+    speakerIdx: integer("speaker_idx").notNull().default(0),
+    text: text("text").notNull(),
+    // faster-whisper AVG confidence 0..1; UI surfaces the mean as a badge.
+    confidence: integer("confidence").notNull().default(0),
+  },
+  (s) => [uniqueIndex("transcript_segments_meeting_idx_uq").on(s.meetingId, s.idx)],
+);
+
+export const JOB_KINDS = ["transcribe"] as const;
+export type JobKind = (typeof JOB_KINDS)[number];
+
+export const JOB_STATUSES = ["queued", "processing", "done", "failed"] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export type JobPayload = {
+  // Minimal on purpose: the worker resolves the meeting row (and its audio
+  // key / tenant) from the DB rather than trusting denormalized payload data.
+  meetingId: string;
+};
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    kind: text("kind").$type<JobKind>().notNull().default("transcribe"),
+    payload: jsonb("payload").$type<JobPayload>().notNull(),
+    status: text("status").$type<JobStatus>().notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    // Lease-claim marker: watchdog requeues leases older than 15 min.
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (j) => [index("jobs_status_created_idx").on(j.status, j.createdAt)],
+);
+
