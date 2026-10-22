@@ -1,10 +1,29 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import { desc, eq } from "drizzle-orm";
 import { authOptions } from "@/auth";
+import { db } from "@/db/client";
+import { meetings } from "@/db/schema";
 import { getPrimaryWorkspace } from "@/lib/workspace";
 import { SignOutButton } from "@/components/sign-out-button";
+import { UploadForm } from "@/components/upload-form";
 
 export const dynamic = "force-dynamic";
+
+const STATUS_LABELS: Record<string, string> = {
+  uploaded: "Uploaded",
+  queued: "Queued",
+  processing: "Transcribing…",
+  completed: "Completed",
+  low_confidence: "Low confidence",
+  failed: "Failed",
+};
+
+function formatDuration(durationMs: number | null): string {
+  if (durationMs === null) return "—";
+  const total = Math.round(durationMs / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -15,6 +34,20 @@ export default async function DashboardPage() {
     redirect("/login?callbackUrl=/dashboard");
   }
   const primary = await getPrimaryWorkspace(userId);
+  const list = primary
+    ? await db
+        .select({
+          id: meetings.id,
+          title: meetings.title,
+          status: meetings.status,
+          durationMs: meetings.durationMs,
+          createdAt: meetings.createdAt,
+        })
+        .from(meetings)
+        .where(eq(meetings.workspaceId, primary.workspace.id))
+        .orderBy(desc(meetings.createdAt))
+        .limit(50)
+    : [];
 
   return (
     <main className="min-h-screen bg-neutral-900 p-8 text-neutral-100">
@@ -49,6 +82,35 @@ export default async function DashboardPage() {
             </p>
           </section>
         )}
+
+        <UploadForm />
+
+        <section className="mt-8">
+          <h2 className="text-lg font-medium">Meetings</h2>
+          {list.length === 0 ? (
+            <p className="mt-3 text-sm text-neutral-400">
+              Nothing yet — upload meeting audio to get started.
+            </p>
+          ) : (
+            <ul className="mt-3 divide-y divide-neutral-800">
+              {list.map((m) => (
+                <li key={m.id} className="py-3">
+                  <a
+                    href={`/dashboard/meetings/${m.id}`}
+                    className="flex items-baseline justify-between gap-4"
+                  >
+                    <span className="font-medium">{m.title}</span>
+                    <span className="text-xs text-neutral-400">
+                      {STATUS_LABELS[m.status] ?? m.status} ·{" "}
+                      {formatDuration(m.durationMs)} ·{" "}
+                      {m.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </main>
   );
