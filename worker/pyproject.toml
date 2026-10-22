@@ -10,6 +10,17 @@ dependencies = [
     "uvicorn>=0.30",
 ]
 
-# Days 4–6: the local-engine extra (faster-whisper) and the Groq-backed paid
-# engine path are added here after their wheels + licenses are verified — no
-# speculative pins before then.
+[project.optional-dependencies]
+# engine-local: CPU transcription. faster-whisper 1.2.1 verified on PyPI
+# (2026-10-23): MIT, owner SYSTRAN; wheel py3-none-any. Requires-python >=3.9
+# fits our 3.11. No system ffmpeg needed — PyAV (dep, av>=11) bundles the
+# FFmpeg libs. Transitive deps inherit permissive licenses (ctranslate2 MIT).
+engine-local = [
+    "faster-whisper==1.2.1",
+    # faster-whisper 1.2.1 still passes the av kwarg metadata_errors, which
+    # PyAV 15+ removed — 14.2.0 is the newest av in the tested window, and
+    # the worker is pinned to 3.12 so 14.x wheels exist (cp314 starts at
+    # PyAV 15.1, which is exactly the breaking line). Revisit when SYSTRAN
+    # releases a build for the modern PyAV API.
+    "av==14.2.0",
+]
