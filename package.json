@@ -1,0 +1,12 @@
+{
+  "name": "kioku",
+  "private": true,
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "dev": "pnpm --filter kioku-app dev",
+    "build": "pnpm --filter kioku-app build",
+    "lint": "pnpm --filter kioku-app lint",
+    "db:generate": "pnpm --filter kioku-app db:generate",
+    "db:migrate": "pnpm --filter kioku-app db:migrate"
+  }
+}

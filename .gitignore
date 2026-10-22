@@ -1,0 +1,20 @@
+# agent tooling artifacts (not product code)
+.agents/
+skills-lock.json
+
+# deps & builds
+node_modules/
+.next/
+out/
+dist/
+.venv/
+__pycache__/
+*.pyc
+
+# env — config lives in the environment, secrets never in git
+.env
+.env.local
+
+# os/editor
+.DS_Store
+*.log

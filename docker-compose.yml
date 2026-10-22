@@ -1,0 +1,23 @@
+# Kioku dev/self-host compose (Day-3 slice: database only).
+# The full self-host stack (web + worker + minio + caddy) assembles on Day 7 per
+# the approved plan §5.7 — until then `docker compose up -d` provides Postgres.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kioku
+      POSTGRES_PASSWORD: kioku
+      POSTGRES_DB: kioku
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kioku -d kioku"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:
