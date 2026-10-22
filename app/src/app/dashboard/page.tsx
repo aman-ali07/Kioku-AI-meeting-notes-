@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { eq } from "drizzle-orm";
 import { authOptions } from "@/auth";
-import { db } from "@/db/client";
-import { workspaceMembers, workspaces } from "@/db/schema";
+import { getPrimaryWorkspace } from "@/lib/workspace";
 import { SignOutButton } from "@/components/sign-out-button";
 
 export const dynamic = "force-dynamic";
@@ -16,57 +14,42 @@ export default async function DashboardPage() {
     // treat it as signed out rather than querying a tenant on an empty id.
     redirect("/login?callbackUrl=/dashboard");
   }
-
-  const memberships = await db
-    .select({ workspace: workspaces, role: workspaceMembers.role })
-    .from(workspaceMembers)
-    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
-    .where(eq(workspaceMembers.userId, userId))
-    .limit(1);
-
-  const membership = memberships[0];
+  const primary = await getPrimaryWorkspace(userId);
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 px-6 py-20">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Kioku</h1>
-        <SignOutButton />
-      </header>
-
-      <section className="flex flex-col gap-4 rounded-lg border border-neutral-800 bg-neutral-900/50 p-6">
-        <p className="text-sm text-neutral-400">
+    <main className="min-h-screen bg-neutral-900 p-8 text-neutral-100">
+      <div className="mx-auto max-w-3xl">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">Kioku</h1>
+          <SignOutButton />
+        </div>
+        <p className="mt-2 text-sm text-neutral-400">
           Signed in as{" "}
-          <span className="font-mono text-neutral-100">
-            {session.user?.email ?? userId}
-          </span>
+          <span className="text-neutral-100">{session.user?.email ?? userId}</span>
         </p>
-        {membership ? (
-          <div className="flex flex-col gap-1">
-            <p className="text-lg font-medium">{membership.workspace.name}</p>
-            <p className="text-sm text-neutral-400">
-              Your role: <span className="text-neutral-200">{membership.role}</span>
-              {" · "}plan:{" "}
-              <span className="text-neutral-200">
-                {membership.workspace.billingPlan}
-              </span>
-              {" · "}retention:{" "}
-              <span className="text-neutral-200">
-                {membership.workspace.retentionDays} days
-              </span>
-            </p>
-          </div>
-        ) : (
-          <p className="text-sm text-amber-400">
-            No workspace found for your account — sign out and in again to
-            re-run provisioning.
-          </p>
-        )}
-      </section>
 
-      <p className="text-sm text-neutral-500">
-        Meetings, transcripts, and summaries arrive with the Days 4–6 milestone
-        (upload + pipeline + worker).
-      </p>
+        {primary ? (
+          <section className="mt-8 rounded-lg border border-neutral-700 p-6">
+            <p className="text-lg font-medium">{primary.workspace.name}</p>
+            <p className="mt-1 text-sm text-neutral-400">
+              Your role: <span className="text-neutral-200">{primary.role}</span>
+            </p>
+            <p className="mt-1 text-sm text-neutral-400">
+              Plan: <span className="text-neutral-200">{primary.workspace.billingPlan}</span>
+            </p>
+            <p className="mt-1 text-sm text-neutral-400">
+              Retention: {primary.workspace.retentionDays} days
+            </p>
+          </section>
+        ) : (
+          <section className="mt-8 rounded-lg border border-neutral-700 p-6">
+            <p className="text-sm text-neutral-300">
+              No workspace found for your account. Sign out and back in to
+              re-provision it — if that persists, it&apos;s a bug.
+            </p>
+          </section>
+        )}
+      </div>
     </main>
   );
 }

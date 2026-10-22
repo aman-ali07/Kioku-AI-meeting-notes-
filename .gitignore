@@ -15,6 +15,9 @@ __pycache__/
 .env
 .env.local
 
+# uploaded meeting audio (product data; never in git)
+data/
+
 # os/editor
 .DS_Store
 *.log
