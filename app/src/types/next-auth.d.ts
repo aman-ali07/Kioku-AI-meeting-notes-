@@ -1,11 +1,12 @@
 import "next-auth";
 
-// Augment only what next-auth v4 doesn't already type: our JWT `uid` claim
-// (set in src/auth.ts jwt callback) reaching the session as user.id.
+// Augment what next-auth v4 doesn't type. `id` stays OPTIONAL on purpose: at
+// runtime a stale/malformed JWT can yield a session whose user has no id —
+// consumers must guard (see dashboard/page.tsx) instead of trusting "".
 declare module "next-auth" {
   interface Session {
     user?: {
-      id: string;
+      id?: string;
       name?: string | null;
       email?: string | null;
       image?: string | null;

@@ -48,15 +48,40 @@ lifecycle package before allowing.
 `/home/aman/package-lock.json` made Next infer the workspace root as $HOME.
 Left the stray file alone (outside repo scope) and pinned root explicitly.
 
-**D10 — Lazy env validation + `force-dynamic` on `/healthz`.** Prevents
-`next build` from requiring a live DB (Next can statically evaluate GET
-route handlers otherwise).
+**D10 — `force-dynamic` on `/healthz`.** Prevents `next build` from
+attempting to statically evaluate the GET handler (and thereby hitting the
+DB at build time). Superseded detail: the earlier "lazy env accessors"
+claim — db modules evaluate DATABASE_URL at module scope (see D13) — is a
+documented build prerequisite, not an abstraction.
 
 **D11 — Worker never owns DDL.** Drizzle owns schema; today `/healthz` does
 `SELECT 1`; in Days 4–6 the worker consumes `jobs` rows via SQL
 (SKIP LOCKED + `locked_at` leases, plan-aware priority) — no table creation
 from Python, single migration record.
 
-**D12 — Engines deferred.** faster-whisper gets pinned only when the
-engine-local extra arrives and its wheel + license are verified (Days 4–6).
-Groq stays config-gated as the paid engine default (spec §6).
+## 2026-10-23 — hardening decisions
+
+**D12 — First-provisioning is lock-serialized.** `ensurePersonalWorkspace`
+uses `pg_advisory_xact_lock(hashtext(userId))` and re-checks inside the
+transaction. Rationale: without it, two concurrent first sign-ins mint two
+"Personal" workspaces — harmless-looking at day 1, but a metering/billing
+bug once `usage_meters` is per-workspace (the user's quota splits across two
+rows). ~Zero ongoing cost; correctness bought before meters arrive.
+
+**D13 — The lazy-db abstraction was refused, the constraint documented.**
+Attempted a Proxy-lazy db client so builds never evaluated DATABASE_URL.
+Drizzle interop? no — DrizzleAdapter introspects the instance's own
+properties, so a proxy failed at runtime ("Unsupported database type").
+Foundation: acceptable consequence of the module-scope client — builds/CI
+need DATABASE_URL present (placeholder ok). Documented in client.ts +
+TESTING.md and TRANSPARENTLY changed in TESTING.md where the smoke's
+"provisioning exercised" claim overstated what the script actually asserted
+(the script now binds the Postgres rows so the claim is real).
+
+**D14 — Engines deferred to their milestone.** faster-whisper gets pinned
+only when the engine-local extra arrives and its wheel + license are
+verified (Days 4–6). Groq stays config-gated as the paid engine default
+(spec §6); the summarizer line is planned as Groq `gpt-oss-120b`
+(₹≈0.25/meeting) — Groq Llama 3.3 70B went enterprise-only (2026-08), so it
+must not be re-spec'd.
+

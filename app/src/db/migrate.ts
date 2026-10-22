@@ -15,8 +15,9 @@ import postgres from "postgres";
 const here = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(here, "../..");
 
-// No .env file is a normal case (deployment configures env directly) — this
-// catch is a documented absence, not a swallowed failure.
+// No .env file is a normal case (deployment configures env directly) — that is
+// the documented absence. Any OTHER fs failure (permissions, path issues) must
+// surface: fail closed, never mask a real problem as "no .env found".
 try {
   const env = readFileSync(resolve(appRoot, ".env"), "utf8");
   for (const line of env.split("\n")) {
@@ -25,7 +26,10 @@ try {
       process.env[parsed[1]] = parsed[2].replace(/^["']|["']$/g, "");
     }
   }
-} catch {
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+    throw error;
+  }
   console.log("No app/.env file found — relying on the process environment.");
 }
 

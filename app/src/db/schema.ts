@@ -76,8 +76,10 @@ export const verificationTokens = pgTable(
 export const workspaces = pgTable("workspaces", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
+  // Text (no CHECK constraint) by design: plan vocabulary is product-shaped —
+  // widen the TS union here when billing lands; DB constraint when stable.
   billingPlan: text("billing_plan")
-    .$type<"free" | "pro">()
+    .$type<"free" | "pro" | "team" | "selfhost">()
     .notNull()
     .default("free"),
   retentionDays: integer("retention_days").notNull().default(90),

@@ -1,9 +1,11 @@
 /**
  * Server-side environment access.
  *
- * Lazy on purpose: validators run on first real use, so `next build` never
- * requires a live database or a secret. Config comes from the environment
- * only — nothing here supplies defaults that could leak into prod.
+ * Config comes from the environment only — nothing here supplies defaults
+ * that could leak into prod. Note (checked against the adapter's behavior):
+ * modules importing the db client evaluate DATABASE_URL at module scope, so
+ * builds/CI need DATABASE_URL present (a placeholder suffices; actual
+ * connection happens on first query). Fail loud, fail early.
  */
 export function requireEnv(name: string): string {
   const value = process.env[name];

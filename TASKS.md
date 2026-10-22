@@ -19,6 +19,12 @@ Update this file whenever planning or implementation status changes.
 | T-008 | Auth smoke script committed | done | `scripts/smoke-auth.sh`, executable, PASS run recorded |
 | T-009 | Documentation set (this file set) | done | AGENTS/PRD/ARCHITECTURE/… composed from verified repo state; no invented features |
 
+### Hardening slice — audit follow-ups (2026-10-23)
+
+| ID | Task | Status | Acceptance / evidence |
+|---|---|---|---|
+| T-019b | Close the audit findings before Days 4–6 | done | `pg_advisory_xact_lock` + in-tx recheck in provisioning (race → two "Personal" workspaces would corrupt per-workspace metering); smoke gate binds Postgres rows (owner membership for the session uid) + fresh-link offset capture + `curl -f` everywhere; migrate.ts ENOENT-only catch; dashboard guards malformed session ids; dedup'd Google env gate; `.env` files chmod 600; worker healthz non-sensitive error string. Evidence: typecheck exit 0, `pnpm build` green, smoke PASS (fresh email, uid `9226…`, tenant row verified by the script) |
+
 ## Blocked
 
 | ID | Task | Blocker | Acceptance when unblocked |

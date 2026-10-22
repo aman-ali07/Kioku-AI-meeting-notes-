@@ -4,6 +4,7 @@ import Google from "next-auth/providers/google";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { db } from "@/db/client";
 import { ensurePersonalWorkspace } from "@/provision";
+import { isGoogleAuthConfigured } from "@/env";
 
 export const authOptions: NextAuthOptions = {
   adapter: DrizzleAdapter(db),
@@ -24,11 +25,11 @@ export const authOptions: NextAuthOptions = {
     }),
     // Google is enabled only in deployments that provide credentials; the
     // button simply doesn't exist otherwise (plan §5: no fake options).
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ...(isGoogleAuthConfigured()
       ? [
           Google({
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            clientId: process.env.GOOGLE_CLIENT_ID as string,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
           }),
         ]
       : []),

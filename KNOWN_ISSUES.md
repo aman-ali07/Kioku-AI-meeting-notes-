@@ -7,8 +7,11 @@ is real and tracked; move items to CHANGELOG when fixed.
 
 - **KI-1 No prod email delivery.** Magic links print to the server console
   only (D5). A deployed box without T-018 wired can't complete sign-up.
-- **KI-2 No rate limiting on `POST /api/auth/signin/email`** — an open relay
-  for mail-spam on a deployed box; fix before or with T-018.
+- **KI-2 No rate limiting on `POST /api/auth/signin/email`** — on a deployed
+  box this is a mail-bomb vector; fix before or with T-018. Also true today
+  (pre-T-018): each valid-CSRF POST writes a `verificationToken` row (v4
+  never purges expired rows) — unbounded table/log growth from scriptable
+  abuse; needs the same rate-limit slice.
 - **KI-3 No automated security/behavior test suite** — smoke-auth covers the
   happy path only; money/privacy red→green tests land later (T-019).
 - **KI-4 No CI** — checks are local runs only.

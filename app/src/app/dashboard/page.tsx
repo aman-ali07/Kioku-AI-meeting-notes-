@@ -10,9 +10,13 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  if (!session) redirect("/login?callbackUrl=/dashboard");
+  const userId = session?.user?.id;
+  if (!session || !userId) {
+    // A session without a user id is malformed (stale token, broken config) —
+    // treat it as signed out rather than querying a tenant on an empty id.
+    redirect("/login?callbackUrl=/dashboard");
+  }
 
-  const userId = session.user?.id ?? "";
   const memberships = await db
     .select({ workspace: workspaces, role: workspaceMembers.role })
     .from(workspaceMembers)

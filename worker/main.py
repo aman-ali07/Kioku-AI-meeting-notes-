@@ -24,7 +24,10 @@ def healthz():
     url = os.environ.get("DATABASE_URL")
     if not url:
         ok = False
-        checks["db"] = "error: DATABASE_URL not set"
+        # Keep the response non-sensitive (mirror the app-side healthz): detail
+        # goes to this process's logs only.
+        checks["db"] = "error"
+        print("[healthz] DATABASE_URL is not set", flush=True)
     else:
         try:
             with psycopg.connect(url, connect_timeout=3) as conn:

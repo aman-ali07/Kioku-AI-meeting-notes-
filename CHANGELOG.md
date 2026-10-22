@@ -29,4 +29,26 @@ releases yet.
 - Migrations: 6 tables confirmed in psql.
 - Both `/healthz` endpoints truthfully reflect DB state.
 
+### Fixed — 2026-10-23 (audit-driven hardening, T-019b)
+
+- Provisioning race closed: per-user transaction-scoped advisory lock +
+  re-check inside the transaction (two concurrent first sign-ins can no
+  longer mint two "Personal" workspaces — matters once meters are
+  per-workspace).
+- Smoke gate now proves provisioning in the database (owner-membership row
+  for the session uid), captures only *new* log bytes (stale-link failure
+  mode removed), and fails loudly on any non-2xx (`curl -f`).
+- `migrate.ts` no longer masks non-ENOENT fs failures as "no .env found".
+- Dashboard treats a malformed session (missing uid) as signed-out instead
+  of querying a tenant with an empty id; `user.id` typing made honest
+  (optional in augmentation).
+- Google env gate deduped through `isGoogleAuthConfigured()`;
+  `billing_plan` TS union widened to `free|pro|team|selfhost` (no DB change
+  — text column, constraint deliberately deferred until billing stabilizes).
+- Worker `/healthz` error strings made non-sensitive; `.env` files
+  chmod 600. Build prerequisite (DATABASE_URL present at build time)
+  documented honestly after the lazy-DB attempt broke DrizzleAdapter's
+  eager introspection.
+
 ### Known gaps → see KNOWN_ISSUES.md (license still pending, plan Day 7).
+
