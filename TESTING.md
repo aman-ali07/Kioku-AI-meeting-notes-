@@ -1,23 +1,28 @@
 # TESTING — Kioku
 
-## What is proven today (2026-10-22, with real runs)
+## What is proven (Days 1–3 + pipeline slice, with real runs)
 
 | Check | Command | Proves |
 |---|---|---|
 | Type safety gate | `pnpm typecheck` (`tsc --noEmit`) | Exit 0 — no TS errors |
-| Production build gate | `pnpm build` | Next compiles; `/` static; `/login`, `/dashboard`, `/healthz` dynamic |
-| Schema → migration | `pnpm db:generate` + `pnpm db:migrate` | 6 tables exist via `psql \dt` |
+| Production build gate | `pnpm build` | Next compiles; `/` static; rest dynamic incl. `/dashboard/meetings/[id]` |
+| Schema → migration | `pnpm db:generate` + `pnpm db:migrate` | 9 tables exist via `psql \dt` (auth 4 + workspaces 2 + pipeline 3) |
 | **Auth end-to-end** | `bash scripts/smoke-auth.sh` | healthz → providers → CSRF → signed-in email request → **offset-fresh** magic link from console transport → callback cookie → `session` returns `user.id` → dashboard 200 → **DB assertion: owner-membership row for the session's uid in Postgres**. **PASS** on a fresh registration address — provisioning is bound by the gate, not assumed |
+| **Pipeline end-to-end** | `bash scripts/smoke-pipeline.sh` (dev server + `cd worker && uv run python pipeline.py` + compose db) | authenticated upload of a real-speech fixture → `jobs` row → worker claim → faster-whisper transcript → `meetings.status=completed` **and** ≥1 `transcript_segments` row asserted in Postgres. **PASS** (meeting `e4823cc2…`: JFK clip → correct text at 81% confidence, `duration_ms=11000` probed exactly) |
+| Degenerate filter (negative path) | upload a 1 s sine tone → run worker | 0 speech segments → `low_confidence` (not `completed`, not a fake transcript). **PASS** (tone → `low_confidence`, duration 1 000 ms exact) |
+| Lease watchdog | plant a `processing` job with `locked_at = now() - 20 min` → run worker | `requeued 1 stale-lease job(s)` in the log; job re-claimed with `attempts+1`. **PASS** |
+| Upload boundary guards | curl without cookie / `.txt` payload / >50 MiB body | 401 / 400 unsupported-type / 413 too-large. **PASS** (all three) |
 | Tenant provisioning | psql join query | `Personal` workspace row, `billing_plan=free`, owner membership tied to the session's user id |
-| Worker health (positive) | `uv run uvicorn main:app --port 8009` + curl | `200 {db:"ok"}` |
-| Worker health (negative) | same with unreachable `DATABASE_URL` | `503 {db:"error"}` (error detail only in server logs — non-sensitive response) |
+| Worker health (positive) | `uv run uvicorn main:app --port 8009` + curl | `200 {db:"ok", storage:"ok"}` |
+| Worker health (negative) | same with unreachable `DATABASE_URL`/bad STORAGE_DIR | `503` with `error` checks (detail only in server logs — non-sensitive response) |
 
 ## Rules
 
-- **Smoke before claims**: any change to auth, provisioning, or health paths
-  re-runs `scripts/smoke-auth.sh` (app) and the worker check before "done".
-  The script asserts tenant rows in Postgres itself (psql owner-membership
-  check for the session uid) — a dashboard 200 alone is NOT proof.
+- **Smoke before claims**: any change to auth, provisioning, upload, or
+  health/queue paths re-runs the matching gate (`scripts/smoke-auth.sh`,
+  `scripts/smoke-pipeline.sh`) and the worker checks before "done". The
+  scripts assert Postgres rows themselves — a dashboard 200 alone (or a
+  `completed` status without a segments-count check) is NOT proof.
 - **Build env prerequisite (honest one)**: `pnpm build` imports the db client
   at module scope, so DATABASE_URL must exist in the build environment
   (in CI you may set a placeholder; the real connection happens on first

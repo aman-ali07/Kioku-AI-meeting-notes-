@@ -26,15 +26,16 @@ unverified package (slopsquatting risk).
 | tsx | 4.20.6 | MIT | runs `src/db/migrate.ts` (needs `"type": "module"`) |
 | @types/* (node 24.7.1, react 19.2.2, react-dom 19.2.1, nodemailer 7.0.4) | — | MIT/… | matching majors for the wheels above |
 
-## Worker (`worker/pyproject.toml`, uv-managed, ≥3.11)
+## Worker (`worker/pyproject.toml`, uv-managed, .python-version pins 3.12)
 
-| Package | Constraint | Why |
-|---|---|---|
-| fastapi | >=0.115 | `/healthz` service; future job endpoint |
-| uvicorn | >=0.30 (0.54.0 resolved) | server |
-| psycopg[binary] | >=3.2 | db checks now; job leases later |
-| python-dotenv | >=1.0 | loads `worker/.env` (process env still wins) |
-| *faster-whisper* | *not pinned yet* | Days 4–6 — verify wheel + license in that slice first |
+| Package | Constraint | License | Why |
+|---|---|---|---|
+| fastapi | >=0.115 | MIT | `/healthz` service; future job endpoint |
+| uvicorn | >=0.30 (0.54.0 resolved) | BSD-3 | server |
+| psycopg[binary] | >=3.2 | LGPL-3.0 | db checks + queue job leases |
+| python-dotenv | >=1.0 | BSD-3 | loads `worker/.env` (process env still wins) |
+| faster-whisper | ==1.2.1 (engine-local extra) | MIT | verified on PyPI 2026-10-23: current release, owner SYSTRAN/Guillaume Klein, wheel `py3-none-any`; decode via bundled FFmpeg (PyAV) — no system ffmpeg needed |
+| av | ==14.2.0 (engine-local extra) | Apache-2.0 | newest PyAV in faster-whisper's tested window — 15+ removed the `metadata_errors` kwarg faster-whisper still passes, and cp314 wheels only start at PyAV 15.1 (hence the 3.12 pin) |
 
 ## Infra & runtime
 
@@ -47,7 +48,9 @@ unverified package (slopsquatting risk).
 - **Node 24.22.1 / pnpm 12.15.0** (dev runtime; pnpm pinned via
   `packageManager`). Node engines field & Dockerfile base image get decided
   at the Day-7 self-host slice.
-- **Python 3.11.15 + uv** for the worker venv.
+- **Python 3.12 + uv** for the worker venv (pinned in `worker/.python-version`;
+  3.14 was tried first — its wheel reality forces PyAV ≥15.1 which breaks
+  faster-whisper; see the av row above).
 
 ## pnpm 12 facts captured for future installs
 

@@ -18,8 +18,22 @@ app = FastAPI(title="kioku-worker")
 
 @app.get("/healthz")
 def healthz():
-    checks = {"storage": "not-provisioned (Days 4–6)"}
+    checks = {}
     ok = True
+
+    # Storage: STORAGE_DIR must exist and be writable (the worker only reads
+    # here, but a read-only mount would break nothing today and should not
+    # pass silently either — the app writes the files this process consumes).
+    storage_dir = os.environ.get("STORAGE_DIR")
+    if storage_dir and os.path.isdir(storage_dir) and os.access(storage_dir, os.W_OK):
+        checks["storage"] = "ok"
+    else:
+        ok = False
+        checks["storage"] = "error"
+        print(
+            f"[healthz] STORAGE_DIR not usable: {storage_dir!r} (missing or read-only)",
+            flush=True,
+        )
 
     url = os.environ.get("DATABASE_URL")
     if not url:

@@ -21,11 +21,13 @@ is real and tracked; move items to CHANGELOG when fixed.
 - KI-5 Google sign-in is env-gated and **untested live** (no dev
   credentials exist locally) — the provider/auth plumbing is smoke-covered
   via the email path only.
-- KI-6 `/healthz` storage/queue checks are staged "not-provisioned" until
-  Days 4–6 milestones land them.
-- KI-7 UI is placeholder Tailwind (landing/login/dashboard) — the real
-  design system arrives with the UI milestone; current accessibility is
-  semantic-but-unpolished.
+- KI-6 The **worker is an unsupervised loop**: `uv run python pipeline.py`
+  must be running or nothing transcribes (dev box needs supervision —
+  arrives with the self-host compose v2 at T-012). Queue checks in
+  `/healthz` remain judge-by-results (storage/db checks are real now).
+- KI-7 UI is placeholder Tailwind (landing/login/dashboard + meeting views)
+  — the real design system arrives with the UI milestone; current
+  accessibility is semantic-but-unpolished.
 - KI-8 LICENSE + TRADEMARKS.md don't exist yet (Day 7): treat the repo as
   source-available-by-intent until AGPL-3.0 lands. Keep marketing claims out
   until then.
@@ -47,7 +49,11 @@ is real and tracked; move items to CHANGELOG when fixed.
 
 ## Open questions
 
-- Q1 Dev box choice/availability (Oracle Always Free A1 vs Netcup pico) —
-  blocks T-010.
-- Q2 Days 4–6 engine: verify faster-whisper wheel/license + RTF budget on
-  2-core box before pinning (T-015).
+- Q1 Dev box choice/availability (Oracle Always Free A1 ARM 4 OCPU first,
+  Netcup **Lite 1** 2 vCPU/4 GB fallback; 1 GB "pico" ruled out — OOM risk
+  under small-int8) — blocks T-010.
+- Q2 **Engine RTF budget on the 2-vCPU box**: the pin/license/wheel question
+  is settled (D14/Faster-whisper 1.2.1 verified, PASS runs on this dev
+  machine) — what remains is a measured RTF on a real ~1 h file on the
+  actual target hardware BEFORE any campaign number is published
+  (~₹0.25/meeting summarizer math comes after that measure).

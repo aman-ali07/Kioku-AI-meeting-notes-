@@ -41,6 +41,8 @@ pnpm typecheck        # tsc --noEmit in the app package
 pnpm build            # next build (production gate)
 pnpm dev              # Next dev server on :3000 (magic links print to its console)
 bash scripts/smoke-auth.sh  # register+login end-to-end gate (needs dev server + SMOKE_LOG)
+cd worker && uv run python pipeline.py  # transcription queue loop (needs STORAGE_DIR + db)
+bash scripts/smoke-pipeline.sh  # upload→queue→transcribe→rows gate (needs all three above)
 cd worker && uv sync && uv run uvicorn main:app --port 8009  # worker /healthz on :8009
 ```
 

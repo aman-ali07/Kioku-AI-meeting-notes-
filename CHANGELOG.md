@@ -50,5 +50,29 @@ releases yet.
   documented honestly after the lazy-DB attempt broke DrizzleAdapter's
   eager introspection.
 
+### Added — Days 4–6 pipeline slice (2026-10-23/24)
+
+- Pipeline schema: `meetings`, `transcript_segments`, `jobs` (migrations
+  `0001` + `0002` — the second one is the fix-forward correcting my own
+  unique→plain index mistake before it could bite).
+- `app/src/storage.ts` — filesystem storage adapter (3 ops: put/get/delete)
+  on `STORAGE_DIR`; S3/R2 driver swaps in behind the same signatures later.
+- `POST /api/upload` — session + tenant guarded, type/size boundary-checked,
+  server-generated storage keys, ground-truth disk size recheck, orphan-file
+  cleanup on DB failure. Boundaries verified: 401/400/413.
+- `worker/pipeline.py` — claim loop (`FOR UPDATE SKIP LOCKED`), 15-min lease
+  watchdog, PyAV duration probe, faster-whisper small/int8 CPU transcription,
+  degenerate-output filter (post-ASR, pre-summary), retry-until-3-attempts
+  semantics with `failed` visible on the meeting.
+- Engine pin recorded in TECH_STACK after PyPI verification:
+  faster-whisper **1.2.1** (MIT, SYSTRAN) + **av 14.2.0** (PyAV 15+ is a
+  breaking line for it); worker venv pinned to Python 3.12 via
+  `.python-version` for wheel availability.
+- Dashboard: tenant-scoped meetings list, upload form,
+  `/dashboard/meetings/<id>` transcript view (cross-tenant ids 404).
+- `scripts/smoke-pipeline.sh` — upload → queue → transcribe → rows gate;
+  **PASS** (JFK speech clip → completed, correct text).
+- Worker `/healthz` storage check made real (STORAGE_DIR exist+writable).
+
 ### Known gaps → see KNOWN_ISSUES.md (license still pending, plan Day 7).
 

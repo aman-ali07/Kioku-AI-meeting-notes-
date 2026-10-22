@@ -8,7 +8,8 @@ action items → searchable team dashboard with shareable meeting pages.
 (setup, uptime, billing), never capability — nothing is gated from the open repo.
 
 - Design & 30-day execution plan: [`docs/specs/2026-10-22-kioku-design.md`](docs/specs/2026-10-22-kioku-design.md)
-- Status: scaffold complete (Days 1–3 of the plan) — register+login green locally; transcription pipeline next (Days 4–6)
+- Status: transcription pipeline live (Days 4–6 of the plan complete) — register+login green locally; upload → queue → local transcription → transcript view all verified; summaries/actions next (Days 8–13)
+- Differentiator slice next up after that: auto retention-purge + 1-click export
 - License pending (plan Day 7): AGPL-3.0 core, TRADEMARKS.md to follow.
 
 ## Layout
@@ -16,7 +17,7 @@ action items → searchable team dashboard with shareable meeting pages.
 | Path | What it is |
 |---|---|
 | `app/` | Next.js 15 web app (TypeScript, Tailwind, Drizzle, Auth.js magic-link + env-gated Google) |
-| `worker/` | Python 3.11 worker (FastAPI `/healthz`) — transcription pipeline lands Days 4–6 |
+| `worker/` | Python 3.12 worker (FastAPI `/healthz`) — claim-loop transcription (faster-whisper small/int8) |
 | `docs/specs/` | Approved product spec |
 | `docs/` + root `AGENTS.md`, `*.md` | Agent/human documentation set (see AGENTS.md for the routing map) |
 
@@ -47,10 +48,11 @@ Magic-link emails are printed to the dev-server console (no SMTP needed locally)
 Sign in at http://localhost:3000/login, open the link from the console — you're
 in, with a "Personal" workspace provisioned on first sign-in.
 
-Provable in one command (dev server running):
+Provable in two commands (dev server + compose db + worker loop running):
 
 ```sh
-bash scripts/smoke-auth.sh   # healthz → providers → magic link → session → dashboard
+bash scripts/smoke-auth.sh     # healthz → providers → magic link → session → dashboard → tenant rows
+bash scripts/smoke-pipeline.sh # upload → queue → faster-whisper → transcript rows in Postgres
 ```
 
 `GET /healthz` — `{ status, checks: { db, storage, … } }`; 503 when the db is
