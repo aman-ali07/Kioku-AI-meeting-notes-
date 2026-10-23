@@ -22,6 +22,7 @@ name: kioku-selfhost
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: kioku
       POSTGRES_DB: kioku
@@ -48,6 +49,7 @@ services:
     restart: "no"
 
   web:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/web.Dockerfile
@@ -91,6 +93,7 @@ services:
 
   proxy:
     image: caddy:2-alpine
+    restart: unless-stopped
     ports:
       - "${HTTP_BIND:-80}:80"
       - "${HTTPS_BIND:-443}:443"
