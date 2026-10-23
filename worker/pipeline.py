@@ -45,7 +45,23 @@ MAX_EMPTY_RATIO = 0.9  # mostly empty segments => nothing usable
 
 
 def connect():
-    return psycopg.connect(DATABASE_URL, autocommit=True)
+    """Connect with retry — the worker runs unattended, so a temporarily
+    down db (compose startup order, box restarts) must never be fatal.
+    Backoff 1s → 30s cap, each failure logged loudly."""
+    last_exc: Exception = Exception("unreachable")
+    delay = 1.0
+    while True:
+        try:
+            return psycopg.connect(DATABASE_URL, autocommit=True)
+        except psycopg.OperationalError as exc:
+            last_exc = exc
+            print(
+                f"[pipeline] db not reachable: {exc!r} — retrying in {delay:.0f}s",
+                flush=True,
+            )
+            if delay < 30.0:
+                delay = min(delay * 2, 30.0)
+            time.sleep(delay)
 
 
 def requeue_stale_leases(conn: psycopg.Connection) -> int:
@@ -332,37 +348,51 @@ def main() -> None:
     last_purge = 0.0
     try:
         while True:
-            requeued = requeue_stale_leases(conn)
-            if requeued:
-                print(f"[pipeline] requeued {requeued} stale-lease job(s)", flush=True)
-
-            if time.time() - last_purge >= PURGE_INTERVAL_SECONDS:
-                purged = run_purge(conn)
-                if purged:
-                    print(f"[purge] removed {purged} meeting(s) per retention policy", flush=True)
-                last_purge = time.time()
-
-            job = claim_job(conn)
-            if job is None:
-                time.sleep(POLL_SECONDS)
-                continue
-
-            job_id, kind, payload = job
-            attempts = 1  # claim incremented it; re-read for accuracy
-            with conn.cursor() as cur:
-                cur.execute("SELECT attempts FROM jobs WHERE id = %s", (job_id,))
-                attempts = cur.fetchone()[0]
-            print(f"[pipeline] claimed {kind} job {job_id} (attempt {attempts})", flush=True)
-
             try:
-                if kind != "transcribe":
-                    raise RuntimeError(f"unknown job kind: {kind}")
-                process_job(conn, job_id, payload if isinstance(payload, dict) else json.loads(payload))
-                finish_job(conn, job_id)
-                print(f"[pipeline] job {job_id} done", flush=True)
-            except Exception as exc:  # noqa: BLE001 — worker must survive any bad job
-                print(f"[pipeline] job {job_id} attempt {attempts} failed: {exc}", flush=True)
-                fail_job(conn, job_id, attempts, str(exc))
+                requeued = requeue_stale_leases(conn)
+                if requeued:
+                    print(f"[pipeline] requeued {requeued} stale-lease job(s)", flush=True)
+
+                if time.time() - last_purge >= PURGE_INTERVAL_SECONDS:
+                    purged = run_purge(conn)
+                    if purged:
+                        print(f"[purge] removed {purged} meeting(s) per retention policy", flush=True)
+                    last_purge = time.time()
+
+                job = claim_job(conn)
+                if job is None:
+                    time.sleep(POLL_SECONDS)
+                    continue
+
+                job_id, kind, payload = job
+                attempts = 1  # claim incremented it; re-read for accuracy
+                with conn.cursor() as cur:
+                    cur.execute("SELECT attempts FROM jobs WHERE id = %s", (job_id,))
+                    attempts = cur.fetchone()[0]
+                print(f"[pipeline] claimed {kind} job {job_id} (attempt {attempts})", flush=True)
+
+                try:
+                    if kind != "transcribe":
+                        raise RuntimeError(f"unknown job kind: {kind}")
+                    process_job(conn, job_id, payload if isinstance(payload, dict) else json.loads(payload))
+                    finish_job(conn, job_id)
+                    print(f"[pipeline] job {job_id} done", flush=True)
+                except Exception as exc:  # noqa: BLE001 — worker must survive any bad job
+                    print(f"[pipeline] job {job_id} attempt {attempts} failed: {exc}", flush=True)
+                    fail_job(conn, job_id, attempts, str(exc))
+            except psycopg.Error as exc:
+                # The loop must outlive the connection: db restarts, admin
+                # terminations, and network blips happen on every real box.
+                # Lose it, reconnect, retry the tick (backoff keeps a down db
+                # from spinning). Anything a claim held is recoverable — the
+                # lease watchdog requeues it on the next tick.
+                print(f"[pipeline] db connection lost, reconnecting ({type(exc).__name__})", flush=True)
+                try:
+                    conn.close()
+                except Exception:  # noqa: BLE001 — closing a dead conn must not crash
+                    pass
+                time.sleep(5.0)
+                conn = connect()
     finally:
         conn.close()
 
