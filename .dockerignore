@@ -1,0 +1,19 @@
+# Keep build contexts small AND secret-free: the real .env files must never
+# land in an image layer (they carry databases URLs with credentials,
+# NEXTAUTH_SECRET). .env.example files are fine to copy.
+.git/
+.agents/
+.serena/
+skills-lock.json
+data/
+out/
+dist/
+*.log
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+app/.next/
+app/tsconfig.tsbuildinfo
+**/.env
+**/.env.local

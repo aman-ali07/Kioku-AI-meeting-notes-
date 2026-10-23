@@ -1,0 +1,9 @@
+# Kioku self-host proxy. SITE is interpolated by compose:
+#   meet.example.com     → automatic TLS (public DNS name)
+#   http://localhost     → plain HTTP (test/LAN via host port mapping)
+# Host matching is by name, so an explicit scheme + any base URL (with the
+# mapped port) reaches the same :80 listener. One upstream.
+{$SITE} {
+	encode zstd gzip
+	reverse_proxy {$WEB_UPSTREAM:-web:3000}
+}

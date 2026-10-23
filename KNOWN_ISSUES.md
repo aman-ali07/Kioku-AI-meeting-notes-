@@ -28,6 +28,10 @@ is real and tracked; move items to CHANGELOG when fixed.
 - KI-7 UI is placeholder Tailwind (landing/login/dashboard + meeting views)
   — the real design system arrives with the UI milestone; current
   accessibility is semantic-but-unpolished.
+- KI-8 **No automated backups in the self-host stack** (compose v0 ships
+  db-data/audio/model-cache volumes but no scheduled `pg_dump` sidecar).
+  Manually `docker compose exec db pg_dump …` works today; automation is
+  required before any external users.
 - KI-8 LICENSE + TRADEMARKS.md don't exist yet (Day 7): treat the repo as
   source-available-by-intent until AGPL-3.0 lands. Keep marketing claims out
   until then.

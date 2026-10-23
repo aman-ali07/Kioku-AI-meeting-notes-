@@ -100,5 +100,35 @@ releases yet.
 - License metadata: `app/package.json` `"license":
   "AGPL-3.0-or-later"`, `worker/pyproject.toml` PEP 621 license table.
 
+### Added — Day 7 slice B: self-host stack (2026-10-24)
+
+- `docker-compose.selfhost.yml` v0 — web + worker + db + shared audio volume
+  + Caddy, under its own project name (`kioku-selfhost`) so dev and self-host
+  composes can never collide (proven the hard way: without it the selfhost db
+  replaced the dev container AND mounted the dev volume — today's lesson).
+- `docker/web.Dockerfile` — standalone Next build (deps/build/toolchain/run
+  targets; toolchain runs the one-shot `migrate` service). Tracing root pinned
+  to the pnpm workspace root — pinning to `app/` silently ships a bundle
+  WITHOUT `next` (second lesson). Storage dir seeded as `node` before the
+  USER switch so a fresh volume is writable by the app (third lesson).
+- `docker/worker.Dockerfile` — engine-local wheels baked (no BuildKit features
+  — the box may not have buildx); model cache volume persists upgrades.
+- `docker/Caddyfile` + `deploy/selfhost.env.example` — site by `SITE` env:
+  public host = auto-TLS, `http://…` = plain HTTP for LAN/test.
+- `scripts/smoke-selfhost.sh` — the Day-7 gate: **PASS** (proxy → magic link
+  from container logs → upload → containerized worker transcribes → export
+  zip valid). Migrate-from-zero on the fresh selfhost db: 78 ms.
+- `.dockerignore` — secrets/rule #1: `**/.env` and `data/` never enter a
+  build context.
+- `next.config.mjs` — `output: "standalone"` (as its comment promised).
+
+### Fixed — Day 7 slice B: worker resilience
+
+- `pipeline.py` loop outlives the connection: per-tick reconnect on
+  `psycopg.Error`, connection retries with 1–30 s backoff. Exposed when the
+  dev db was restarted under a live worker (`AdminShutdown` used to kill the
+  loop); live-proven: bounce db → "db connection lost, reconnecting" →
+  process alive → fresh smoke-pipeline PASS.
+
 ### Known gaps → see KNOWN_ISSUES.md (license still pending, plan Day 7).
 

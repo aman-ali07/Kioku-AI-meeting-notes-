@@ -41,7 +41,8 @@ Update this file whenever planning or implementation status changes.
 |---|---|---|---|
 | T-020 | Auto retention-purge (worker loop) | done | hourly sweep in `pipeline.py` over workspace `retention_days`; blob+rows+queued jobs removed; queued/processing exempt (never races a claim); `--purge-once` for ops. Evidence: planted `retention_days=0` tenant — completed meeting/blob/queued job deleted, queued sibling survived (TESTING.md table row) |
 | T-021 | 1-click full export | done | `GET /api/meetings/<id>/export`: transcript+metadata+audio zip, tenant-guarded, dependency-free store-zip (round-trip proved). Evidence: curl → valid zip, byte-identical audio, 401/404 negatives pass |
-| T-011 | LICENSE + TRADEMARKS + README v0 | planned | stays Day 7 — **the differentiator itself is shipped free in the core as the spec requires (AGPL core never feature-gated)** |
+| T-011 | LICENSE + TRADEMARKS + README v0 | done | LICENSE = verbatim AGPL-3.0 (byte-compared vs two gnu.org downloads, `0d96a4ff…`); TRADEMARKS.md (name/logo outside the §7e license grant); license metadata in both package manifests; README gains the self-host quickstart |
+| T-012 | Self-host compose (web + worker + db + storage + Caddy) | done | `docker-compose.selfhost.yml` v0 — standalone web image + engine-local worker image + migrate one-shot + supervised worker; **plus** `scripts/smoke-selfhost.sh` full-stack gate (proxy→auth→upload→transcribe→export). Storage = shared fs volume per D15 (S3 swap is a storage-adapter swap). Evidence: TESTING.md rows (container e2e PASS; migrate from-zero on fresh db 78 ms); worker outage-resilience fix committed alongside |
 
 ## Blocked
 
@@ -53,8 +54,8 @@ Update this file whenever planning or implementation status changes.
 
 | ID | Task | Milestone | Depends on |
 |---|---|---|---|
-| T-011 | LICENSE (AGPL-3.0) + TRADEMARKS.md + README v0 | Day 7 | — |
-| T-012 | Self-host compose v2: web + worker + db + MinIO + Caddy, migrations auto-run | Day 7 | T-011 |
+| T-011 | LICENSE (AGPL-3.0) + TRADEMARKS.md + README v0 | **→ delivered 2026-10-24** (see completed table) | — |
+| T-012 | Self-host compose v2: web + worker + db + MinIO + Caddy, migrations auto-run | **→ delivered 2026-10-24 (see completed table; storage = shared volume per D15, MinIO intentionally deferred)** | — |
 | T-013 | Audio upload + S3/MinIO storage layer | **→ see "Days 4–6 pipeline slice" above (delivered 2026-10-24; fs adapter first, S3 swap when needed)** | — |
 | T-014 | `jobs` table + plan-aware queue pop (SKIP LOCKED + lease TTL `locked_at`) | **→ delivered 2026-10-24 (plan-aware priority deferred to billing)** | T-013 |
 | T-015 | Local engine runner (faster-whisper small-int8) + degenerate-output filter | **→ delivered 2026-10-24** | T-014 |

@@ -1,0 +1,113 @@
+# Kioku self-host stack (v0): web + worker + db + storage volume + proxy.
+#
+# `name:` gives this stack its own compose project — REQUIRED: dev and
+# self-host composes share this directory, and same-project services with
+# the same name collide (proven the hard way: the selfhost db replaced the
+# dev `saas-db-1` container AND mounted the dev volume, whose data dir was
+# initialized long ago — the fresh POSTGRES_PASSWORD was silently ignored).
+name: kioku-selfhost
+
+#   cp deploy/selfhost.env.example .env   # fill secrets, then:
+#   docker compose -f docker-compose.selfhost.yml up -d --build
+#   docker compose -f docker-compose.selfhost.yml logs -f web   # magic links (console transport, KI-1)
+#
+# Deliberate choices:
+# - Own ports/volumes: coexists with the dev compose (its db stays on :5433).
+# - Worker supervision = `restart: unless-stopped`: a crashed loop comes
+#   back and the lease watchdog requeues whatever it was holding.
+# - Migrations run as a one-shot service (journal is idempotent) before
+#   web/worker start — the worker must never CREATE TABLE.
+# - Both storage consumers share one named volume (app writes, worker reads).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kioku
+      POSTGRES_DB: kioku
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see deploy/selfhost.env.example)}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kioku -d kioku"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: toolchain
+    command: sh -c "cd /repo && pnpm db:migrate"
+    environment:
+      DATABASE_URL: postgres://kioku:${POSTGRES_PASSWORD}@db:5432/kioku
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: run
+    environment:
+      DATABASE_URL: postgres://kioku:${POSTGRES_PASSWORD}@db:5432/kioku
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env (see deploy/selfhost.env.example)}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?set NEXTAUTH_URL in .env (the public origin users visit)}
+      STORAGE_DIR: /data/audio
+    volumes:
+      - audio:/data/audio
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz | grep -q '\"status\":\"ok\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    environment:
+      DATABASE_URL: postgres://kioku:${POSTGRES_PASSWORD}@db:5432/kioku
+      STORAGE_DIR: /data/audio
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      HF_HOME: /models
+    volumes:
+      - audio:/data/audio
+      - model-cache:/models
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    ports:
+      - "${HTTP_BIND:-80}:80"
+      - "${HTTPS_BIND:-443}:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      SITE: ${SITE:?set SITE in .env — host for auto-TLS (e.g. meet.example.com) or http://localhost for plain HTTP; see deploy/selfhost.env.example}
+      WEB_UPSTREAM: web:3000
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  db-data:
+  audio:
+  model-cache:
+  caddy-data:
+  caddy-config:
