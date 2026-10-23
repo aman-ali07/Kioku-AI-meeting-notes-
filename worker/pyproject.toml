@@ -2,6 +2,8 @@
 name = "kioku-worker"
 version = "0.1.0"
 description = "Kioku transcription/queue worker"
+# PEP 621 text form (SPDX-string form would need PEP 639 build backends).
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

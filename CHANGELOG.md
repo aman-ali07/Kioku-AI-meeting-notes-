@@ -91,5 +91,14 @@ releases yet.
 - TECH_STACK: none added — the export path deliberately carries no new
   dependency.
 
+### Added — Day 7 slice A: licensing paperwork (2026-10-24)
+
+- `LICENSE` — verbatim AGPL-3.0 (byte-compared against two independent
+  downloads from gnu.org; canonical sha256 prefix `0d96a4ff…`).
+- `TRADEMARKS.md` — the name/logo are not part of the license grant
+  (AGPL §7e): referential use fine, passing off not.
+- License metadata: `app/package.json` `"license":
+  "AGPL-3.0-or-later"`, `worker/pyproject.toml` PEP 621 license table.
+
 ### Known gaps → see KNOWN_ISSUES.md (license still pending, plan Day 7).
 
