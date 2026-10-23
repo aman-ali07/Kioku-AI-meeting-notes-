@@ -52,6 +52,14 @@ export default async function MeetingPage({
     .where(eq(transcriptSegments.meetingId, id))
     .orderBy(asc(transcriptSegments.idx));
 
+  // Retention is per-workspace policy; show the user exactly when the
+  // auto-purge lands (the free-tier differentiator, visible not hidden).
+  const purgeDate = new Date(
+    meeting.createdAt.getTime() + primary.workspace.retentionDays * 86_400_000,
+  )
+    .toISOString()
+    .slice(0, 10);
+
   return (
     <main className="min-h-screen bg-neutral-900 p-8 text-neutral-100">
       <div className="mx-auto max-w-3xl">
@@ -65,6 +73,16 @@ export default async function MeetingPage({
             ? "duration pending"
             : `${Math.round(meeting.durationMs / 1000)}s`}
         </p>
+        <p className="mt-1 text-sm text-neutral-400">
+          Auto-purges on <span className="text-neutral-200">{purgeDate}</span> (
+          {primary.workspace.retentionDays}-day workspace retention).
+        </p>
+        <a
+          href={`/api/meetings/${meeting.id}/export`}
+          className="mt-3 inline-block rounded bg-neutral-100 px-4 py-1.5 text-sm font-medium text-neutral-900"
+        >
+          Download full export (.zip)
+        </a>
 
         {segments.length === 0 ? (
           <p className="mt-8 text-sm text-neutral-400">

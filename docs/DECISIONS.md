@@ -85,3 +85,26 @@ verified (Days 4–6). Groq stays config-gated as the paid engine default
 (₹≈0.25/meeting) — Groq Llama 3.3 70B went enterprise-only (2026-08), so it
 must not be re-spec'd.
 
+**D15 — The differentiator ships free and boring-by-design (2026-10-24).**
+Auto retention-purge + 1-click export are the launch wedge (Fireflies hides
+auto-delete behind Enterprise and export behind paid — calibrated
+2026-10-22). Choices worth re-reading later:
+- **Purge sweeps hourly in the worker loop**, not cron/LISTEN: deletes
+  meetings older than the workspace's `retention_days`, their blobs, and any
+  queued jobs for them. **Never touches queued/processing meetings** — a
+  purge must not race an active claim even at `retention_days=0`. Terminal
+  `done/failed` job rows are kept as the record that a pipeline ran.
+  Consequence (accepted): actual deletion can lag the policy by up to 1 h.
+  `--purge-once` exists for ops/cron users — run it from any scheduler.
+- **Per-file purge cleanup is best-effort but never silent**: an unreadable
+  path logs and *blocks that meeting's row deletion* (no DB row without its
+  blob purged, while ENOENT is treated as already-gone — the fs is the
+  ledger).
+- **Export = dependency-free STORE zip** (`app/src/lib/export-zip.ts`):
+  compression buys nothing (audio dominates and is already compressed), so a
+  ~60-line store-only writer with `zlib.crc32` (Node ≥ 20.15) beats a
+  supply-chain dependency. Round-trip-proved with `python3 -m zipfile -t`
+  before shipping; extend to deflate only with the same proof.
+- Export sits behind the same session + workspace guard as reads;
+  cross-workspace ids 404 without leaking existence.
+

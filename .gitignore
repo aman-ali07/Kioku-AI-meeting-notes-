@@ -1,5 +1,6 @@
 # agent tooling artifacts (not product code)
 .agents/
+.serena/
 skills-lock.json
 
 # deps & builds

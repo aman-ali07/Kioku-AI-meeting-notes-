@@ -74,5 +74,20 @@ releases yet.
   **PASS** (JFK speech clip → completed, correct text).
 - Worker `/healthz` storage check made real (STORAGE_DIR exist+writable).
 
+### Added — differentiator slice: retention purge + full export (2026-10-23/24)
+
+- **Auto retention-purge** in the worker loop (hourly sweep over
+  `workspaces.retention_days`; queued/processing meetings exempt; dockets:
+  audio blob + meeting row + queued jobs; `--purge-once` for ops/cron).
+  Verified: deleted matching blob + rows at `retention_days=0` while the
+  queued sibling survived.
+- **One-click full export** `GET /api/meetings/<id>/export` —
+  transcript.txt + metadata.json + original audio in a zip, session- and
+  tenant-guarded (cross-workspace → 404, no existence leak). Zip builder is
+  dependency-free (store-only, `zlib.crc32`) and round-trip-tested.
+- Transcript page surfaces the purge date and the export button.
+- TECH_STACK: none added — the export path deliberately carries no new
+  dependency.
+
 ### Known gaps → see KNOWN_ISSUES.md (license still pending, plan Day 7).
 

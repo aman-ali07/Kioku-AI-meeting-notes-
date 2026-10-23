@@ -16,6 +16,7 @@ the billing milestone and is selected per-workspace there (no config yet).
 import json
 import math
 import os
+import sys
 import time
 import unicodedata
 from collections import Counter
@@ -253,14 +254,93 @@ def _status_for(rows, confs) -> str:
     return "completed"
 
 
+def run_purge(conn: psycopg.Connection) -> int:
+    """Retention purge — the differentiator (spec: Fireflies hides auto-delete
+    behind Enterprise and exports behind paid tiers; Kioku ships both free).
+
+    Deletes audio on disk + meeting rows (segments cascade via FK) whose age
+    exceeds the workspace's retention_days policy. Deliberately excludes
+    queued/processing meetings: a purge must never race an active claim, so a
+    meeting being published right now is untouched even at retention_days=0.
+    Queued jobs of purged meetings are deleted outright (nothing left to
+    claim — a claim on a purged meeting could only fail); terminal job rows
+    stay as the record that a pipeline ran.
+
+    Returns the number of meetings purged. Failure is per-file best-effort:
+    one unreadable path must not block the sweep (logged, not swallowed
+    silently — every cleanup error prints).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.id, m.audio_key
+              FROM meetings m
+              JOIN workspaces w ON w.id = m.workspace_id
+             WHERE m.status IN ('uploaded', 'completed', 'low_confidence', 'failed')
+               AND m.created_at < now() - make_interval(days => w.retention_days)
+            """
+        )
+        victims = cur.fetchall()
+
+    purged = 0
+    for meeting_id, audio_key in victims:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM jobs
+                 WHERE status = 'queued'
+                   AND payload->>'meetingId' = %s::text
+                """,
+                (str(meeting_id),),
+            )
+            if audio_key:
+                if ".." not in audio_key and not audio_key.startswith("/"):
+                    path = os.path.join(STORAGE_DIR, audio_key)
+                    try:
+                        os.remove(path)
+                    except FileNotFoundError:
+                        pass  # already gone — nothing to purge (fs is our ledger)
+                    except OSError as exc:
+                        # Don't drop the DB row while its blob still exists —
+                        # fail this file loudly; only file-reads partly removed
+                        print(f"[purge] could not remove {path}: {exc}", flush=True)
+                        continue
+                else:
+                    print(f"[purge] skipped unsafe key: {audio_key[:48]}…", flush=True)
+                    continue
+            cur.execute("DELETE FROM meetings WHERE id = %s", (meeting_id,))
+        purged += 1
+    return purged
+
+
+PURGE_INTERVAL_SECONDS = 3600  # hourly sweep — retention is audit-cheap
+
+
 def main() -> None:
+    if "--purge-once" in sys.argv:
+        # Manual/ops mode: one sweep and exit (future self-host cron users).
+        purge_conn = connect()
+        try:
+            count = run_purge(purge_conn)
+            print(f"[purge] one-shot removed {count} meeting(s)", flush=True)
+        finally:
+            purge_conn.close()
+        return
+
     print(f"[pipeline] started (model={MODEL_SIZE}, storage={STORAGE_DIR})", flush=True)
     conn = connect()
+    last_purge = 0.0
     try:
         while True:
             requeued = requeue_stale_leases(conn)
             if requeued:
                 print(f"[pipeline] requeued {requeued} stale-lease job(s)", flush=True)
+
+            if time.time() - last_purge >= PURGE_INTERVAL_SECONDS:
+                purged = run_purge(conn)
+                if purged:
+                    print(f"[purge] removed {purged} meeting(s) per retention policy", flush=True)
+                last_purge = time.time()
 
             job = claim_job(conn)
             if job is None:

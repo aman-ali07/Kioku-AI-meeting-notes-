@@ -113,6 +113,14 @@ saas/
    AND the meeting flips to `failed` (fail closed, visible in the UI).
 6. `/dashboard/meetings/<id>` — tenant-scoped read; another workspace's
    meeting id 404s (never leaks existence). Placeholder-Tailwind UI (KI-7).
+7. **Retention purge** (hourly in the same loop; differentiator) — deletes
+   meetings older than their workspace's `retention_days` (D15): blob,
+   meeting row, and queued jobs. Queued/processing meetings are exempt
+   (a purge must never race an active claim); `--purge-once` exists for
+   ops/cron users.
+8. **One-click full export** `GET /api/meetings/<id>/export` — transcript +
+   metadata + original audio in a store-only zip built with `zlib.crc32`
+   (no zip dependency — D15); same guards as reads, cross-tenant 404.
 
 ## `/healthz` contract (both services)
 

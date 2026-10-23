@@ -35,6 +35,14 @@ Update this file whenever planning or implementation status changes.
 | T-016a | Dashboard meetings list + transcript page | done | tenant-scoped list + `/dashboard/meetings/<id>` (foreign-workspace id → 404); upload form (client) → API. Evidence: typecheck/build green; renders behind working queries |
 | T-016-not-yet | Summaries + action items + search/share | planned | Days 8–13 milestone (T-016 in the table below) — this slice only delivered the transcript plumbing it lists as its prerequisite |
 
+### Differentiator slice — retention purge + 1-click export (delivered 2026-10-24)
+
+| ID | Task | Status | Acceptance / evidence |
+|---|---|---|---|
+| T-020 | Auto retention-purge (worker loop) | done | hourly sweep in `pipeline.py` over workspace `retention_days`; blob+rows+queued jobs removed; queued/processing exempt (never races a claim); `--purge-once` for ops. Evidence: planted `retention_days=0` tenant — completed meeting/blob/queued job deleted, queued sibling survived (TESTING.md table row) |
+| T-021 | 1-click full export | done | `GET /api/meetings/<id>/export`: transcript+metadata+audio zip, tenant-guarded, dependency-free store-zip (round-trip proved). Evidence: curl → valid zip, byte-identical audio, 401/404 negatives pass |
+| T-011 | LICENSE + TRADEMARKS + README v0 | planned | stays Day 7 — **the differentiator itself is shipped free in the core as the spec requires (AGPL core never feature-gated)** |
+
 ## Blocked
 
 | ID | Task | Blocker | Acceptance when unblocked |

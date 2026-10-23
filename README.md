@@ -8,9 +8,8 @@ action items → searchable team dashboard with shareable meeting pages.
 (setup, uptime, billing), never capability — nothing is gated from the open repo.
 
 - Design & 30-day execution plan: [`docs/specs/2026-10-22-kioku-design.md`](docs/specs/2026-10-22-kioku-design.md)
-- Status: transcription pipeline live (Days 4–6 of the plan complete) — register+login green locally; upload → queue → local transcription → transcript view all verified; summaries/actions next (Days 8–13)
-- Differentiator slice next up after that: auto retention-purge + 1-click export
-- License pending (plan Day 7): AGPL-3.0 core, TRADEMARKS.md to follow.
+- Status: pipeline **and differentiator delivered** (Days 4–6 + retention slice) — register+login, upload → queue → local transcription → transcript view, **auto retention-purge** (per-workspace `retention_days`, free — Fireflies charges Enterprise for this) and **1-click full export** (transcript + metadata + audio zip, also free) all verified end-to-end. Summaries/actions next (Days 8–13)
+- License pending (plan Day 7): AGPL-3.0 core, TRADEMARKS.md to follow. The differentiators ship in the core — no feature gates.
 
 ## Layout
 
@@ -71,5 +70,3 @@ Schema lives in `app/src/db/schema.ts`. After a schema change:
 pnpm db:generate    # schema → SQL in app/drizzle/ (committed, no DB needed)
 pnpm db:migrate     # apply pending migrations to the running Postgres
 ```
-# Kioku-AI-meeting-notes-
-# Kioku-AI-meeting-notes-
