@@ -129,7 +129,7 @@ saas/
   "checks": { "db": "ok | error", "storage": "ok | error" } }
 ```
 HTTP 200 when every check passes; 503 on any failure (both paths verified
-on the worker). The worker's `storage` check is real since storage landed:
-STORAGE_DIR must exist and be writable. Queue health intentionally isn't a
-boolean — a claim loop's liveness shows in rows reaching terminal status,
-not in a check value.
+on both services). Storage checks are real in both since the upload/storage
+slice: STORAGE_DIR must exist and be writable (the app writes, the worker
+reads). Queue health intentionally isn't a boolean — a claim loop's liveness
+shows in rows reaching terminal status, not in a check value.

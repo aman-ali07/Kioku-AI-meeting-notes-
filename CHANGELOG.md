@@ -86,6 +86,8 @@ releases yet.
   tenant-guarded (cross-workspace → 404, no existence leak). Zip builder is
   dependency-free (store-only, `zlib.crc32`) and round-trip-tested.
 - Transcript page surfaces the purge date and the export button.
+- App `/healthz` storage check made real (STORAGE_DIR exist + writable) —
+  both services now report the same truthful `{db, storage}` contract.
 - TECH_STACK: none added — the export path deliberately carries no new
   dependency.
 
