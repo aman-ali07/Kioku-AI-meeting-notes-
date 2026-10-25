@@ -33,9 +33,9 @@ saas/
 │   ├── src/provision.ts  ensurePersonalWorkspace (locking per D12)
 │   ├── src/env.ts        env accessors (build prerequisite documented at D13)
 │   ├── src/storage.ts    fs storage adapter (put/get/delete — R2 swaps in later)
-│   ├── src/lib/          workspace.ts (getPrimaryWorkspace), search.ts (FTS/trigram)
+│   ├── src/lib/          workspace.ts (tenant resolution), workspace-role.ts (write policy), search.ts (FTS/trigram)
 │   ├── src/components/   download-free client bits (upload-form.tsx, sign-out-button)
-│   ├── drizzle/          generated, forward-only SQL migrations (committed; 0000–0004)
+│   ├── drizzle/          generated, forward-only SQL migrations (committed; 0000–0005)
 │   └── .env / .env.example
 ├── worker/               python 3.12 (pinned via .python-version), uv-managed
 │   ├── main.py           FastAPI app with truthful /healthz (db + storage checks)
@@ -83,8 +83,9 @@ saas/
    `jwt` callback sets `uid`, provisions workspace if first sign-in →
    session cookie (`next-auth.session-token`, http-only by default).
 4. `/dashboard` (`force-dynamic`) `getServerSession` → guarded; resolves the
-   tenant via `getPrimaryWorkspace(userId)` and lists the workspace's
-   meetings; the tenant card shows role/plan/retention.
+   tenant via `getPrimaryWorkspace(userId)` (oldest membership,
+   deterministically) and lists the workspace's meetings; the tenant card
+   shows role/plan/retention.
 
 ## Search flow (implemented Days 8–10)
 
@@ -107,6 +108,7 @@ saas/
 ## Pipeline flow (implemented Days 4–6)
 
 1. `POST /api/upload` — session → `getPrimaryWorkspace` tenant guard →
+   `canWriteToWorkspace` role guard (viewer → 403 before the body is read) →
    boundary checks (type allowlist, ≤50 MB, non-empty) → server-generated
    key `<workspaceId>/<meetingId>.<ext>` → write via the fs adapter
    (`STORAGE_DIR`, with a `..`-escape guard) → `meetings` row

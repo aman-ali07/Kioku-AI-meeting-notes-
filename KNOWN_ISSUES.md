@@ -39,6 +39,11 @@ is real and tracked; move items to CHANGELOG when fixed.
 - KI-8 LICENSE + TRADEMARKS.md don't exist yet (Day 7): treat the repo as
   source-available-by-intent until AGPL-3.0 lands. Keep marketing claims out
   until then.
+- KI-14 No workspace switcher, invites, or role-management UI yet. Roles are
+  enforced server-side on the only write endpoint (`POST /api/upload`);
+  `getWorkspaceContext(userId, workspaceId?)` already validates an explicit
+  workspace for the future switcher. Changing a role currently requires a DB
+  update, and there is no audit trail for it.
 
 ## Environment facts (this dev machine)
 

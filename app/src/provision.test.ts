@@ -1,31 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
+import { hasTestDatabase, useTestDatabase } from "@/test-support/database";
 
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
-
-function assertTestDatabase(url: string): void {
-  const dbName = new URL(url).pathname.replace(/^\//, "");
-  if (!dbName.endsWith("_test")) {
-    throw new Error(
-      `Refusing to run provisioning tests against ${JSON.stringify(dbName)}; use a *_test database`,
-    );
-  }
-}
-
-const describeWithDb = TEST_DATABASE_URL ? describe : describe.skip;
+const describeWithDb = hasTestDatabase ? describe : describe.skip;
 
 describeWithDb("ensurePersonalWorkspace retention", () => {
-  let client: Awaited<typeof import("@/db/client")>;
+  const getClient = useTestDatabase();
+  let client: typeof import("@/db/client");
   let ensurePersonalWorkspace: (typeof import("@/provision"))["ensurePersonalWorkspace"];
   const createdUsers: string[] = [];
   const createdWorkspaces: string[] = [];
 
   beforeAll(async () => {
-    assertTestDatabase(TEST_DATABASE_URL!);
-    process.env.DATABASE_URL = TEST_DATABASE_URL!;
-    client = await import("@/db/client");
+    client = getClient();
     ({ ensurePersonalWorkspace } = await import("@/provision"));
   });
 
@@ -37,10 +26,6 @@ describeWithDb("ensurePersonalWorkspace retention", () => {
     for (const userId of createdUsers.splice(0)) {
       await client.db.delete(users).where(eq(users.id, userId));
     }
-  });
-
-  afterAll(async () => {
-    if (client) await client.sql.end();
   });
 
   async function createUser(): Promise<string> {

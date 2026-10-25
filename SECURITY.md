@@ -22,9 +22,16 @@
 - First sign-in provisions a `Personal` workspace with the user as `owner`
   (`ensurePersonalWorkspace`, idempotent, transactional). **Fail-closed**: DB
   failure blocks sign-in rather than minting a tenant-less session.
-- Tenant-scoped queries join through `workspace_members` (dashboard does
-  this). Roles (`owner/member/viewer`) exist in schema; enforcement rules
-  arrive as multi-workspace features are built (Days 8–13).
+- Tenant resolution goes through `workspace_members` only
+  (`getWorkspaceContext(userId, workspaceId?)`). With no id, the oldest
+  membership wins (`created_at`, then `workspace_id` as tie-break); an explicit
+  id is validated against membership and a foreign or malformed id returns
+  null. **Fail-closed**: no membership means no tenant, not a default one.
+- **Roles:** `owner`/`member` may write, `viewer` is read-only. Enforced at
+  `POST /api/upload` (the only write endpoint today) before the body is read;
+  viewers keep dashboard, search, and export access. The policy lives in the
+  pure `canWriteToWorkspace` helper so every future write path shares it.
+  Invites/role management have no UI yet (KI-14).
 - **Search** (`/api/search`, `/dashboard?q=`) filters by the caller's
   resolved workspace; the query string never selects a tenant. Input is
   bounded (2–200 chars), LIKE metacharacters are escaped, and highlight

@@ -159,3 +159,20 @@ drops the default and NOT NULL:
 **Revisit:** when the workspace settings UI lands, changing retention must be
 an owner-only, audited action; it is currently provisioning-time only.
 
+**D19 — Tenant resolution is deterministic and validated; viewers are
+read-only.** The audit found `getPrimaryWorkspace` using an unordered
+`LIMIT 1` and roles that existed in schema but were enforced nowhere:
+- `getWorkspaceContext(userId, workspaceId?)` resolves through
+  `workspace_members` only. No id → oldest membership (`created_at`, then
+  `workspace_id`) — one stable answer across dashboard, upload, and search.
+  Explicit id → canonical-UUID check, then a membership lookup; foreign or
+  malformed ids return `null` (fail closed, never a default tenant).
+- `canWriteToWorkspace` is a pure policy helper (owner/member write, viewer
+  read) so the rule is testable without a database and shared by future write
+  paths. `POST /api/upload` applies it before reading the body (403
+  `Read-only workspace`); dashboard/search/export remain readable to viewers.
+- v1 still has one workspace per user and no switcher; the explicit-id path
+  exists for the upcoming members/switcher slice, not for a hidden feature.
+**Revisit:** invites/role management must be owner-only; when more write
+endpoints exist, each one calls the same helper (enforced by review + tests).
+

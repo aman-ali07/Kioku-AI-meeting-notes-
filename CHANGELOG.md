@@ -162,5 +162,22 @@ releases yet.
 - Existing self-host workspaces keep their stored 90 until deliberately
   changed; upgrade note added to DEPLOYMENT.md.
 
+### Fixed — Phase 0A: deterministic tenancy + viewer write gate (2026-10-25)
+
+- **T-024:** `getWorkspaceContext(userId, workspaceId?)` replaces the
+  unordered `LIMIT 1` tenant lookup. No id → oldest membership
+  (`created_at`, then `workspace_id`); an explicit id must be canonical UUID
+  **and** belong to the caller, otherwise `null` (fail closed). The old
+  `getPrimaryWorkspace` remains the v1 call-site name.
+- **Roles are enforced:** `canWriteToWorkspace` (pure policy: owner/member
+  write, viewer read-only) now guards `POST /api/upload` before the body is
+  read; viewers get `403 Read-only workspace` but keep dashboard/search/export.
+- Tests: shared `test-support/database.ts` bootstrap (refuses non-`_test`
+  databases) used by provisioning, workspace resolution, and route-boundary
+  suites — 26 app tests total. Red→green shown for both the ordering contract
+  and the viewer gate; a live magic-link session was downgraded to viewer
+  (403) and restored to owner (passed the gate) against the dev server.
+- Docs: D19, SECURITY, ARCHITECTURE, TASKS (T-024), KNOWN_ISSUES (KI-14).
+
 ### Known gaps → see KNOWN_ISSUES.md (search is English/whole-word v1; no pagination).
 

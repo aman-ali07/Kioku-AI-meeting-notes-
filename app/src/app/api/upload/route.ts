@@ -7,6 +7,7 @@ import { jobs, meetings } from "@/db/schema";
 import { authOptions } from "@/auth";
 import { requireEnv } from "@/env";
 import { getPrimaryWorkspace } from "@/lib/workspace";
+import { canWriteToWorkspace } from "@/lib/workspace-role";
 import { deleteStorageObject, putStorageObject } from "@/storage";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,9 @@ export async function POST(request: NextRequest) {
   if (!primary) {
     // Fail closed: without a tenant there is nowhere legal to attach the file.
     return NextResponse.json({ error: "No workspace" }, { status: 403 });
+  }
+  if (!canWriteToWorkspace(primary.role)) {
+    return NextResponse.json({ error: "Read-only workspace" }, { status: 403 });
   }
 
   let form: FormData;
