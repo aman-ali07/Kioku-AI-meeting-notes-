@@ -22,6 +22,20 @@
       "when": 1792695265368,
       "tag": "0002_dear_morlun",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792948684441,
+      "tag": "0003_enable_pg_trgm",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792948709141,
+      "tag": "0004_search_vectors",
+      "breakpoints": true
     }
   ]
 }

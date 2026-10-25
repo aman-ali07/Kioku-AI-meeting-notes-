@@ -33,7 +33,7 @@ Update this file whenever planning or implementation status changes.
 | T-014 | `jobs` queue with SKIP LOCKED + lease | done | claim loop `UPDATE … WHERE id=(SELECT … FOR UPDATE SKIP LOCKED LIMIT 1 RETURNING …)`; 15-min watchdog requeues stale leases (verified by planting a stale job); MAX_ATTEMPTS=3 → `failed` + meeting `failed`. No LISTEN/NOTIFY yet — deliberate (self-host simple; audit-cheap) |
 | T-015 | Local engine runner + degenerate filter | done | faster-whisper **1.2.1** (PyPI-verified MIT, owner SYSTRAN) pinned in `engine-local` extra with `av==14.2.0` (PyAV ≥15 removed a kwarg faster-whisper still passes; worker pinned to Python 3.12 accordingly); small/int8 CPU, PyAV duration probe; degenerate filter (mean conf < 0.5, >8× exact-line repeat, mostly-empty → `low_confidence`, post-ASR pre-summary). Evidence: sequential positive+negative runs — JFK clip → `completed` with correct text (81% conf), sine tone (0 segments) → `low_confidence`; `duration_ms` probed exactly (11 000 / 1 000) |
 | T-016a | Dashboard meetings list + transcript page | done | tenant-scoped list + `/dashboard/meetings/<id>` (foreign-workspace id → 404); upload form (client) → API. Evidence: typecheck/build green; renders behind working queries |
-| T-016-not-yet | Summaries + action items + search/share | planned | Days 8–13 milestone (T-016 in the table below) — this slice only delivered the transcript plumbing it lists as its prerequisite |
+| T-016-not-yet | Summaries + action items + share pages | planned | Days 11–13 milestone (T-016 in the table below) — this slice only delivered the transcript plumbing it lists as its prerequisite; dashboard list is T-016a, search is T-022 |
 
 ### Differentiator slice — retention purge + 1-click export (delivered 2026-10-24)
 
@@ -43,6 +43,12 @@ Update this file whenever planning or implementation status changes.
 | T-021 | 1-click full export | done | `GET /api/meetings/<id>/export`: transcript+metadata+audio zip, tenant-guarded, dependency-free store-zip (round-trip proved). Evidence: curl → valid zip, byte-identical audio, 401/404 negatives pass |
 | T-011 | LICENSE + TRADEMARKS + README v0 | done | LICENSE = verbatim AGPL-3.0 (byte-compared vs two gnu.org downloads, `0d96a4ff…`); TRADEMARKS.md (name/logo outside the §7e license grant); license metadata in both package manifests; README gains the self-host quickstart |
 | T-012 | Self-host compose (web + worker + db + storage + Caddy) | done | `docker-compose.selfhost.yml` v0 — standalone web image + engine-local worker image + migrate one-shot + supervised worker; **plus** `scripts/smoke-selfhost.sh` full-stack gate (proxy→auth→upload→transcribe→export). Storage = shared fs volume per D15 (S3 swap is a storage-adapter swap). Evidence: TESTING.md rows (container e2e PASS; migrate from-zero on fresh db 78 ms); worker outage-resilience fix committed alongside |
+
+### Days 8–10 slice A — search (delivered 2026-10-25)
+
+| ID | Task | Status | Acceptance / evidence |
+|---|---|---|---|
+| T-022 | FTS + trigram meeting search | done | Generated `tsvector` columns on `meetings.title` + `transcript_segments.text` with GIN indexes; `pg_trgm` title index (migrations `0003` extension + `0004` columns/indexes, applied and psql-verified); tenant-scoped `GET /api/search?q=` and `/dashboard?q=` with results grouped per meeting, highlighted snippets, and segment deep links. Evidence: `scripts/smoke-search.sh` PASS (title + transcript hits, one row despite two segment matches, **cross-tenant 0 rows**, 401/empty/1-char/201-char boundaries, dashboard render + `?seg=0` link); `EXPLAIN` shows Bitmap Index Scan on all three indexes; typecheck + build green |
 
 ## Blocked
 
@@ -59,7 +65,7 @@ Update this file whenever planning or implementation status changes.
 | T-013 | Audio upload + S3/MinIO storage layer | **→ see "Days 4–6 pipeline slice" above (delivered 2026-10-24; fs adapter first, S3 swap when needed)** | — |
 | T-014 | `jobs` table + plan-aware queue pop (SKIP LOCKED + lease TTL `locked_at`) | **→ delivered 2026-10-24 (plan-aware priority deferred to billing)** | T-013 |
 | T-015 | Local engine runner (faster-whisper small-int8) + degenerate-output filter | **→ delivered 2026-10-24** | T-014 |
-| T-016 | Notes: summaries + action items + dashboard meeting list/search/share | Days 8–13 | T-015 |
+| T-016 | Notes: summaries + action items + dashboard share pages (list/search delivered as T-022) | Days 11–13 | T-015 |
 | T-017 | Hosted metering + Paddle as merchant-of-record (Free 300 audio-min / Pro 4 000, self-host unlimited) | Days 8–13 | T-016 |
 | T-018 | Real email delivery (Brevo/Resend; replaces console transport) | ~Day 15 | — |
 | T-019 | Test suite (vitest/pytest) + CI; money/privacy paths red→green | ≥ Day 7 | — |

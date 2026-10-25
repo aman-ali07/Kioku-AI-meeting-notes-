@@ -28,6 +28,10 @@ is real and tracked; move items to CHANGELOG when fixed.
 - KI-7 UI is placeholder Tailwind (landing/login/dashboard + meeting views)
   — the real design system arrives with the UI milestone; current
   accessibility is semantic-but-unpolished.
+- KI-13 Search v1 is English-only and whole-word for transcripts (title
+  substrings are covered by `pg_trgm`); results are grouped per meeting and
+  capped at 20 with no pagination. Good enough for v0.2; add prefix/tsquery
+  expansion and paging only when real usage hits the cap.
 - KI-8 **No automated backups in the self-host stack** (compose v0 ships
   db-data/audio/model-cache volumes but no scheduled `pg_dump` sidecar).
   Manually `docker compose exec db pg_dump …` works today; automation is

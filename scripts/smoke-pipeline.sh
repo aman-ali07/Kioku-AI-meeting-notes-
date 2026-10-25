@@ -12,6 +12,9 @@
 # Usage: scripts/smoke-pipeline.sh [BASE_URL]
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/smoke-session.sh"
+
 BASE_URL="${1:-http://localhost:3000}"
 SMOKE_LOG="${SMOKE_LOG:-/tmp/opencode/kioku-dev.log}"
 EMAIL="pipe-$(date +%H%M%S)@kioku.test"
@@ -24,30 +27,9 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 curl -sf -m 10 -o /dev/null "$BASE_URL/healthz" || die "healthz unreachable"
 echo "✓ healthz"
 
-# --- Auth (same chain as smoke-auth.sh, self-contained) ---
-csrf=$(curl -sf -m 15 -c "$JAR" "$BASE_URL/api/auth/csrf" \
-  | python3 -c 'import sys, json; print(json.load(sys.stdin)["csrfToken"])') \
-  || die "csrf fetch failed"
-log_offset=$(stat -Lc %s "$SMOKE_LOG")
-curl -sf -m 15 -b "$JAR" -X POST "$BASE_URL/api/auth/signin/email" \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode "csrfToken=$csrf" \
-  --data-urlencode "email=$EMAIL" \
-  --data-urlencode "callbackUrl=$BASE_URL/dashboard" \
-  -o /dev/null || die "signin POST rejected"
-magic=""
-for _ in $(seq 1 15); do
-  magic=$(tail -c "+$((log_offset + 1))" "$SMOKE_LOG" \
-    | grep -F -A1 "Magic link for $EMAIL" | grep -om1 'http[^[:space:]]*' || true)
-  [ -n "$magic" ] && break
-  sleep 1
-done
-[ -n "$magic" ] || die "no fresh magic link"
-curl -sf -m 15 -b "$JAR" -c "$JAR" -L "$magic" -o /dev/null || die "callback failed"
-kuid=$(curl -sf -m 15 -b "$JAR" "$BASE_URL/api/auth/session" \
-  | python3 -c 'import sys, json; print(json.load(sys.stdin).get("user", {}).get("id") or "")')
-[ -n "$kuid" ] || die "no session uid"
-echo "✓ authenticated ($kuid)"
+# --- Auth (shared magic-link chain; see scripts/lib/smoke-session.sh) ---
+smoke_login "$BASE_URL" "$EMAIL" "$JAR" "$SMOKE_LOG"
+echo "✓ authenticated ($SMOKE_UID)"
 
 # --- Speech fixture (public-domain JFK clip from whisper.cpp samples) ---
 if [ ! -s "$FIXTURE" ]; then

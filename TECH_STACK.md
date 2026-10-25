@@ -40,7 +40,9 @@ unverified package (slopsquatting risk).
 ## Infra & runtime
 
 - **Postgres 16** via `postgres:16-alpine` (compose dev service; host port
-  5433 — 5432 belongs to this machine's own system postgres).
+  5433 — 5432 belongs to this machine's own system postgres). Search uses
+  `pg_trgm` from the image's bundled contrib modules (migration `0003`) —
+  no extra service or dependency.
 - **Docker 29.1.3** + **Compose v5.6.1**: the distro's compose is EOL
   v1.29.2 (python), so the official v2 plugin is installed at user level
   (`~/.docker/cli-plugins/`) — future dev boxes should install

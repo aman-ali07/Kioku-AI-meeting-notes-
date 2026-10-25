@@ -25,6 +25,10 @@
 - Tenant-scoped queries join through `workspace_members` (dashboard does
   this). Roles (`owner/member/viewer`) exist in schema; enforcement rules
   arrive as multi-workspace features are built (Days 8–13).
+- **Search** (`/api/search`, `/dashboard?q=`) filters by the caller's
+  resolved workspace; the query string never selects a tenant. Input is
+  bounded (2–200 chars), LIKE metacharacters are escaped, and highlight
+  markers are parsed into text parts rather than injected as HTML.
 
 ## Secrets & environment rules
 

@@ -18,11 +18,17 @@ function formatTime(startMs: number): string {
 
 export default async function MeetingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ seg?: string | string[] }>;
 }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
+
+  const segParam = (await searchParams).seg;
+  const seg = Array.isArray(segParam) ? segParam[0] : segParam;
+  const highlightedIdx = seg && /^\d+$/.test(seg) ? Number(seg) : null;
 
   const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
@@ -92,7 +98,15 @@ export default async function MeetingPage({
         ) : (
           <ol className="mt-6 space-y-3 text-sm">
             {segments.map((s) => (
-              <li key={s.idx} className="flex gap-3">
+              <li
+                key={s.idx}
+                id={`seg-${s.idx}`}
+                className={
+                  highlightedIdx === s.idx
+                    ? "flex scroll-mt-8 gap-3 rounded bg-neutral-800 px-2 py-1"
+                    : "flex scroll-mt-8 gap-3"
+                }
+              >
                 <span className="w-12 shrink-0 text-neutral-500">
                   {formatTime(s.startMs)}
                 </span>

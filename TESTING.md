@@ -9,6 +9,7 @@
 | Schema → migration | `pnpm db:generate` + `pnpm db:migrate` | 9 tables exist via `psql \dt` (auth 4 + workspaces 2 + pipeline 3) |
 | **Auth end-to-end** | `bash scripts/smoke-auth.sh` | healthz → providers → CSRF → signed-in email request → **offset-fresh** magic link from console transport → callback cookie → `session` returns `user.id` → dashboard 200 → **DB assertion: owner-membership row for the session's uid in Postgres**. **PASS** on a fresh registration address — provisioning is bound by the gate, not assumed |
 | **Pipeline end-to-end** | `bash scripts/smoke-pipeline.sh` (dev server + `cd worker && uv run python pipeline.py` + compose db) | authenticated upload of a real-speech fixture → `jobs` row → worker claim → faster-whisper transcript → `meetings.status=completed` **and** ≥1 `transcript_segments` row asserted in Postgres. **PASS** (meeting `e4823cc2…`: JFK clip → correct text at 81% confidence, `duration_ms=11000` probed exactly) |
+| **Search end-to-end (Days 8–10)** | `bash scripts/smoke-search.sh` (dev server + compose db) | Seeds one meeting in the caller's tenant + one in a foreign tenant via psql → title hit grouped to **one row despite two matching segments**, transcript hit with highlighted snippet and segment timestamp, **foreign phrase returns 0 rows**; dashboard renders the hit and `?seg=0` deep link loads; 401 / empty / 1-char / 201-char boundaries. **PASS** (seeded rows cleaned up by the script); `EXPLAIN` shows Bitmap Index Scan on `transcript_segments_search_idx`, `meetings_search_idx`, `meetings_title_trgm_idx` |
 | Degenerate filter (negative path) | upload a 1 s sine tone → run worker | 0 speech segments → `low_confidence` (not `completed`, not a fake transcript). **PASS** (tone → `low_confidence`, duration 1 000 ms exact) |
 | Lease watchdog | plant a `processing` job with `locked_at = now() - 20 min` → run worker | `requeued 1 stale-lease job(s)` in the log; job re-claimed with `attempts+1`. **PASS** |
 | **Full export (differentiator)** | `curl -b jar /api/meetings/<id>/export` → `python3 -m zipfile -t` | valid zip (round-trip-tested), headers `attachment; filename=…zip`; entries: transcript.txt (timestamped, conf%), metadata.json, byte-identical audio (352078 = 352078, CRC clean). **PASS**; negatives 401 (no session) / 404 (cross-workspace id, garbage id) all exercised |
@@ -34,6 +35,9 @@
   around DrizzleAdapter's eager introspection; it breaks adapters.
 - **No tautological tests** — assert on behavior/DB rows/HTTP responses, not
   on mocks constructed inside the test.
+- **Shared smoke login** — `scripts/lib/smoke-session.sh` holds the one
+  magic-link chain used by `smoke-auth.sh`, `smoke-pipeline.sh`, and
+  `smoke-search.sh`; fix the helper once, not three copies.
 - **Red → green for money/privacy paths**: metering math, permission checks,
   cost caps, share-token validation must get failing-first tests before/with
   their implementation (T-017 slice).

@@ -130,5 +130,23 @@ releases yet.
   loop); live-proven: bounce db → "db connection lost, reconnecting" →
   process alive → fresh smoke-pipeline PASS.
 
-### Known gaps → see KNOWN_ISSUES.md (license still pending, plan Day 7).
+### Added — Days 8–10 slice A: search (2026-10-25)
+
+- **Meeting search** (T-022): `GET /api/search?q=` + `/dashboard?q=` search
+  meeting titles and transcript text. Generated `tsvector` columns with GIN
+  indexes, `pg_trgm` title index, `websearch_to_tsquery` (English v1),
+  results grouped per meeting with `ts_headline` snippets rendered as safe
+  React `<mark>` parts, and segment deep links (`?seg=<idx>`).
+- Migrations `0003` (custom: `pg_trgm`) and `0004` (generated columns +
+  indexes), applied and psql-verified.
+- `scripts/smoke-search.sh` — new gate (title/transcript hits, grouping,
+  cross-tenant 0 rows, dashboard render + deep link, 401/empty/short/
+  oversized boundaries). **PASS**.
+- `scripts/lib/smoke-session.sh` — shared magic-link flow; `smoke-auth.sh`
+  and `smoke-pipeline.sh` refactored onto it and re-run: both **PASS**.
+- Verified: `pnpm typecheck` exit 0, `pnpm build` green, `EXPLAIN` uses
+  `transcript_segments_search_idx`, `meetings_search_idx`, and
+  `meetings_title_trgm_idx`.
+
+### Known gaps → see KNOWN_ISSUES.md (search is English/whole-word v1; no pagination).
 

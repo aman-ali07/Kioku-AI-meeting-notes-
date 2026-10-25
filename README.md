@@ -8,8 +8,8 @@ action items → searchable team dashboard with shareable meeting pages.
 (setup, uptime, billing), never capability — nothing is gated from the open repo.
 
 - Design & 30-day execution plan: [`docs/specs/2026-10-22-kioku-design.md`](docs/specs/2026-10-22-kioku-design.md)
-- Status: pipeline **and differentiator delivered** (Days 4–6 + retention slice) — register+login, upload → queue → local transcription → transcript view, **auto retention-purge** (per-workspace `retention_days`, free — Fireflies charges Enterprise for this) and **1-click full export** (transcript + metadata + audio zip, also free) all verified end-to-end. Summaries/actions next (Days 8–13)
-- License pending (plan Day 7): AGPL-3.0 core, TRADEMARKS.md to follow. The differentiators ship in the core — no feature gates.
+- Status: **transcription + retention/export + search delivered** (Days 4–10 slices) — register+login, upload → queue → local transcription → transcript view, **auto retention-purge** (per-workspace `retention_days`, free — Fireflies charges Enterprise for this), **1-click full export** (transcript + metadata + audio zip, also free), and **Postgres FTS/trigram search** across meeting titles and transcripts, all verified end-to-end. Browser recording, workspace members/switcher, then summaries/actions (Days 8–13).
+- License: **AGPL-3.0** (`LICENSE`) + `TRADEMARKS.md` (name/logo outside the §7e grant). The core is never feature-gated.
 
 ## Layout
 

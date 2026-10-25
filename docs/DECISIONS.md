@@ -108,3 +108,36 @@ auto-delete behind Enterprise and export behind paid — calibrated
 - Export sits behind the same session + workspace guard as reads;
   cross-workspace ids 404 without leaking existence.
 
+## 2026-10-25 — search decisions
+
+**D16 — Search is Postgres-native and render-safe.** The spec calls for
+`tsvector` + `pg_trgm`; the implementation choices worth keeping:
+- **Stored generated `tsvector` columns** on `meetings.title` and
+  `transcript_segments.text`, not expression indexes. Generated columns are
+  queryable directly and cannot drift from the source text; the GIN indexes
+  target them. Cost accepted: adding a stored generated column rewrites the
+  table (trivial now; batched later).
+- **`pg_trgm` via a custom drizzle migration (`0003`)** because extensions
+  can't be expressed in `schema.ts`. `drizzle-kit generate --custom` is the
+  sanctioned exception to "never hand-edit SQL"; generated files are still
+  never edited. The extension needs a role with install privileges (fine on
+  the compose db, documented for managed Postgres).
+- **Two queries merged in TypeScript** (titles; best segment per meeting via
+  `DISTINCT ON`) instead of one CTE. Clearer to read and test; results are
+  one row per meeting, title hits boosted, capped at 20 with no pagination
+  in v1.
+- **`ts_headline` sentinels → `{text, match}` parts**, rendered with React
+  `<mark>`. No `dangerouslySetInnerHTML` path, so transcript text can never
+  become markup.
+- **Trigram covers title substrings only**; transcript search is whole-word
+  English FTS in v1 (spec §13). Prefix/stemming expansion is a later change,
+  not a silent config.
+- **Tenant scoping is an argument**, not query text: `searchMeetings(
+  workspaceId, q)` requires the id resolved from the session.
+
+**D17 — Smoke login chain extracted before the third copy.** `smoke-auth.sh`
+and `smoke-pipeline.sh` each carried the same magic-link flow; the search gate
+would have made three. `scripts/lib/smoke-session.sh` now owns it. Both
+existing gates were re-run after the refactor (auth PASS, pipeline PASS) so
+the extraction is proven, not assumed.
+

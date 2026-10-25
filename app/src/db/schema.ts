@@ -1,4 +1,5 @@
 import {
+  customType,
   index,
   integer,
   jsonb,
@@ -9,7 +10,16 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { AdapterAccount } from "next-auth/adapters";
+
+// Postgres has no first-class tsvector type in Drizzle; the generated column
+// below is still the source of truth — the GIN index and queries target it.
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Auth.js (next-auth v4) adapter tables.
@@ -160,8 +170,18 @@ export const meetings = pgTable(
       .notNull()
       .defaultNow(),
     startedAt: timestamp("started_at", { withTimezone: true }),
+    // English-only v1 (spec §13). Generated so it can never drift from title.
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`to_tsvector('english', "title")`,
+    ),
   },
-  (m) => [index("meetings_ws_created_idx").on(m.workspaceId, m.createdAt)],
+  (m) => [
+    index("meetings_ws_created_idx").on(m.workspaceId, m.createdAt),
+    index("meetings_search_idx").using("gin", m.searchVector),
+    // Partial/substring titles; pg_trgm ships with Postgres (extension enabled
+    // by the 0003 custom migration — schema.ts cannot express extensions).
+    index("meetings_title_trgm_idx").using("gin", sql`${m.title} gin_trgm_ops`),
+  ],
 );
 export const transcriptSegments = pgTable(
   "transcript_segments",
@@ -178,8 +198,14 @@ export const transcriptSegments = pgTable(
     text: text("text").notNull(),
     // faster-whisper AVG confidence 0..1; UI surfaces the mean as a badge.
     confidence: integer("confidence").notNull().default(0),
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`to_tsvector('english', "text")`,
+    ),
   },
-  (s) => [uniqueIndex("transcript_segments_meeting_idx_uq").on(s.meetingId, s.idx)],
+  (s) => [
+    uniqueIndex("transcript_segments_meeting_idx_uq").on(s.meetingId, s.idx),
+    index("transcript_segments_search_idx").using("gin", s.searchVector),
+  ],
 );
 
 export const JOB_KINDS = ["transcribe"] as const;

@@ -14,8 +14,9 @@
    │          data/audio/<ws>/<meeting>.<ext> ──── reads ─────▶ faster-whisper small/int8 │
    └── transcript text shown back on /dashboard/meetings/<id> ◀───┘   │
                         worker FastAPI (:8009 healthz) + pipeline.py ─┘
- Planned (Days 8–13): summaries/action items on top of segments; *storage→S3
- driver swap behind the same 3-op adapter*; *plan-aware queue priority*.
+ Planned (Days 8–13): browser recording + consent, workspace members/switcher,
+ summaries/action items on top of segments; *storage→S3 driver swap behind the
+ same 3-op adapter*; *plan-aware queue priority*.
 ```
 
 ## Layout
@@ -25,16 +26,16 @@ saas/
 ├── app/                  next "kioku-app"
 │   ├── src/app/          App Router pages: /, /login, /dashboard,
 │   │                     /dashboard/meetings/[id], /healthz
-│   │                     + /api/upload (multipart POST route)
+│   │                     + /api/upload, /api/search, /api/meetings/[id]/export
 │   ├── src/pages/api/    next-auth v4 catch-all ([...nextauth]) — see DECISIONS #2
 │   ├── src/db/           schema.ts (source of truth), client.ts, migrate.ts
 │   ├── src/auth.ts       NextAuthOptions (email + env-gated Google, JWT strategy)
 │   ├── src/provision.ts  ensurePersonalWorkspace (locking per D12)
 │   ├── src/env.ts        env accessors (build prerequisite documented at D13)
 │   ├── src/storage.ts    fs storage adapter (put/get/delete — R2 swaps in later)
-│   ├── src/lib/          workspace.ts (getPrimaryWorkspace tenant helper)
+│   ├── src/lib/          workspace.ts (getPrimaryWorkspace), search.ts (FTS/trigram)
 │   ├── src/components/   download-free client bits (upload-form.tsx, sign-out-button)
-│   ├── drizzle/          generated, forward-only SQL migrations (committed; 0000–0002)
+│   ├── drizzle/          generated, forward-only SQL migrations (committed; 0000–0004)
 │   └── .env / .env.example
 ├── worker/               python 3.12 (pinned via .python-version), uv-managed
 │   ├── main.py           FastAPI app with truthful /healthz (db + storage checks)
@@ -42,8 +43,10 @@ saas/
 │   ├── pyproject.toml    engine-local extra: faster-whisper 1.2.1 + av 14.2.0
 │   └── .env / .env.example
 ├── scripts/
+│   ├── lib/smoke-session.sh shared magic-link login for all smoke gates
 │   ├── smoke-auth.sh     end-to-end auth gate (register+login+tenant rows)
-│   └── smoke-pipeline.sh end-to-end pipeline gate (upload→queue→transcribe→rows)
+│   ├── smoke-pipeline.sh end-to-end pipeline gate (upload→queue→transcribe→rows)
+│   └── smoke-search.sh   FTS gate (title/transcript hits, cross-tenant, boundaries)
 ├── docs/specs/           approved 30-day design spec
 ├── docker-compose.yml    dev/self-host db (postgres:16-alpine, host :5433)
 └── (AGENTS.md, TASKS.md, …) agent documentation set
@@ -82,6 +85,24 @@ saas/
 4. `/dashboard` (`force-dynamic`) `getServerSession` → guarded; resolves the
    tenant via `getPrimaryWorkspace(userId)` and lists the workspace's
    meetings; the tenant card shows role/plan/retention.
+
+## Search flow (implemented Days 8–10)
+
+1. `/dashboard?q=` (server component) and `GET /api/search?q=` share one
+   tenant-scoped path (`src/lib/search.ts`): `getPrimaryWorkspace` supplies
+   the `workspace_id` filter — the client never selects a tenant.
+2. `websearch_to_tsquery('english', q)` runs against generated `tsvector`
+   columns on titles and segments (GIN); title substrings also use `ILIKE`
+   backed by `pg_trgm`. Transcript matching is whole-word in v1.
+3. Two queries (titles; best segment per meeting via `DISTINCT ON`) merge in
+   TypeScript into one row per meeting, with title hits boosted and a cap of
+   20 results.
+4. `ts_headline` emits sentinel markers; the lib turns them into
+   `{text, match}` parts and React renders `<mark>` — no HTML injection path.
+5. Boundaries: 401 signed out, 403 no tenant, query trimmed, <2 chars →
+   empty result, >200 chars → 400, LIKE metacharacters escaped.
+6. Results deep-link to `/dashboard/meetings/<id>?seg=<idx>#seg-<idx>`,
+   which highlights the matching segment.
 
 ## Pipeline flow (implemented Days 4–6)
 

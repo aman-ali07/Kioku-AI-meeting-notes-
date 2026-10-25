@@ -5,6 +5,12 @@ import { authOptions } from "@/auth";
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { getPrimaryWorkspace } from "@/lib/workspace";
+import {
+  SEARCH_MAX_CHARS,
+  SEARCH_MIN_CHARS,
+  searchMeetings,
+  type SnippetPart,
+} from "@/lib/search";
 import { SignOutButton } from "@/components/sign-out-button";
 import { UploadForm } from "@/components/upload-form";
 
@@ -25,7 +31,30 @@ function formatDuration(durationMs: number | null): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-export default async function DashboardPage() {
+function Snippet({ parts }: { parts: SnippetPart[] }) {
+  return (
+    <span>
+      {parts.map((part, index) =>
+        part.match ? (
+          <mark
+            key={index}
+            className="rounded bg-neutral-700 px-0.5 text-neutral-100"
+          >
+            {part.text}
+          </mark>
+        ) : (
+          <span key={index}>{part.text}</span>
+        ),
+      )}
+    </span>
+  );
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string | string[] }>;
+}) {
   const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
   if (!session || !userId) {
@@ -34,6 +63,16 @@ export default async function DashboardPage() {
     redirect("/login?callbackUrl=/dashboard");
   }
   const primary = await getPrimaryWorkspace(userId);
+
+  const qParam = (await searchParams).q;
+  const query = (Array.isArray(qParam) ? qParam[0] ?? "" : qParam ?? "")
+    .trim()
+    .slice(0, SEARCH_MAX_CHARS);
+  const results =
+    primary && query.length >= SEARCH_MIN_CHARS
+      ? await searchMeetings(primary.workspace.id, query)
+      : [];
+
   const list = primary
     ? await db
         .select({
@@ -82,6 +121,72 @@ export default async function DashboardPage() {
             </p>
           </section>
         )}
+
+        {primary ? (
+          <section className="mt-8">
+            <h2 className="text-lg font-medium">Search</h2>
+            <form action="/dashboard" method="get" className="mt-3 flex gap-2">
+              <input
+                type="search"
+                name="q"
+                defaultValue={query}
+                maxLength={SEARCH_MAX_CHARS}
+                placeholder="Search titles and transcripts…"
+                className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                className="rounded bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900"
+              >
+                Search
+              </button>
+            </form>
+
+            {query.length > 0 && query.length < SEARCH_MIN_CHARS ? (
+              <p className="mt-3 text-sm text-neutral-400">
+                Type at least {SEARCH_MIN_CHARS} characters.
+              </p>
+            ) : null}
+
+            {query.length >= SEARCH_MIN_CHARS ? (
+              results.length === 0 ? (
+                <p className="mt-3 text-sm text-neutral-400">
+                  No matches for &ldquo;{query}&rdquo;.
+                </p>
+              ) : (
+                <ul className="mt-3 divide-y divide-neutral-800">
+                  {results.map((r) => {
+                    const href =
+                      r.segmentIdx === null
+                        ? `/dashboard/meetings/${r.meetingId}`
+                        : `/dashboard/meetings/${r.meetingId}?seg=${r.segmentIdx}#seg-${r.segmentIdx}`;
+                    return (
+                      <li key={r.meetingId}>
+                        <a href={href} className="block py-3">
+                          <span className="flex items-baseline justify-between gap-4">
+                            <span className="font-medium">{r.title}</span>
+                            <span className="shrink-0 text-xs text-neutral-400">
+                              {r.matchedIn === "title"
+                                ? "Title match"
+                                : formatDuration(r.startMs)}
+                              {" · "}
+                              {STATUS_LABELS[r.status] ?? r.status}
+                            </span>
+                          </span>
+                          {r.snippet ? (
+                            <span className="mt-1 block text-sm text-neutral-400">
+                              <Snippet parts={r.snippet} />
+                            </span>
+                          ) : null}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )
+            ) : null}
+          </section>
+        ) : null}
 
         <UploadForm />
 
