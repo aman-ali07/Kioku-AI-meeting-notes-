@@ -66,6 +66,15 @@ cd worker && uv sync && uv run uvicorn main:app --port 8009  # worker /healthz o
 9. Update docs when the implementation changes anything they describe.
 10. Report: what changed, checks run, actual results, remaining issues.
 
+### Audit gate (before every next slice)
+
+Run the four-lens read-only audit (architecture/data, security/tenancy,
+quality/verification, product/docs) before starting a new slice, and append
+the result to `docs/AUDITS.md` (append-only). **P0 stops the slice.** P1 is
+fixed in the slice or explicitly deferred with a `KNOWN_ISSUES.md` entry. A
+slice does not start without a recorded verdict. Audits do not edit code;
+fixes get their own commit and red→green evidence where testable.
+
 **Never claim** a test, build, deployment, or security check passed unless it
 actually ran and did pass in this session.
 
