@@ -60,15 +60,18 @@ Names/columns match `@auth/drizzle-adapter` documented defaults exactly, so
   0–100 (`exp(avg_logprob)·100` from faster-whisper); `search_vector`
   `tsvector` **generated always** from `to_tsvector('english', text)`.
   Unique index `transcript_segments_meeting_idx_uq (meeting_id, idx)` —
-  legitimately unique; the worker deletes-then-reinserts a meeting's set
-  (re-runs must not collide). Plus `transcript_segments_search_idx` (GIN on
+  legitimately unique; the worker replaces a meeting's whole set in one
+  transaction (re-runs must not collide, and a failed write leaves the old
+  transcript intact). Plus `transcript_segments_search_idx` (GIN on
   `search_vector`).
 - **`jobs`** (migration `0001`) — `id` uuid PK; `kind` text
   (`transcribe`); `payload` jsonb notNull (`{ meetingId }` — the worker
   resolves the meeting row from the DB instead of trusting denormalized
   data); `status` text (`queued | processing | done | failed`, default
-  `queued`); `attempts` int default 0; `locked_at` timestamptz (lease
-  marker; watchdog requeues leases > 15 min); `last_error` text;
+  `queued`); `attempts` int default 0, incremented by the claim and capped
+  at `MAX_ATTEMPTS = 3` by both failure paths **and** the stale-lease
+  watchdog; `locked_at` timestamptz (lease marker; watchdog recovers leases
+  > 15 min, failing them once the attempt cap is reached); `last_error` text;
   `created_at`. Plain index `jobs_status_created_idx (status, created_at)`
   for the claim query (same unique→plain fix-forward as above).
 

@@ -39,3 +39,15 @@ def conn(database_url: str):
     finally:
         connection.rollback()
         connection.close()
+
+
+@pytest.fixture()
+def autocommit_conn(database_url: str):
+    """Production-shaped connection: statements commit unless explicitly
+    wrapped in conn.transaction(). A transactional fixture would hide the
+    atomicity bugs the queue tests exist to catch."""
+    connection = psycopg.connect(database_url, autocommit=True)
+    try:
+        yield connection
+    finally:
+        connection.close()

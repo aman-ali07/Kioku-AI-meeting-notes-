@@ -115,25 +115,37 @@ saas/
    (`status=queued`) → `jobs` row (`kind=transcribe`,
    `payload={meetingId}`). A DB failure after a successful file write cleans
    up the orphan file; the on-disk size is re-verified as ground truth.
-2. `worker/pipeline.py` loop — first requeues `processing` jobs whose
-   `locked_at` is older than 15 min (watchdog), then claims one job:
-   `UPDATE jobs … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1
-   RETURNING …)` — n concurrent workers stay disjoint. No job → sleep 2 s.
-   No LISTEN/NOTIFY yet (deliberate: polling is audit-cheap and
-   self-host-simple).
-3. Job processing — resolve the meeting row (erroring out if gone),
-   probe duration with PyAV (no system ffmpeg), transcribe with
-   faster-whisper `small`/int8 on CPU (`vad_filter=True`), and insert
-   `transcript_segments` rows (`confidence = exp(avg_logprob)·100`;
-   delete-then-insert per meeting so re-runs can't collide with the unique
-   `(meeting_id, idx)` index).
+2. `worker/pipeline.py` loop — the watchdog first recovers `processing` jobs
+   whose `locked_at` is older than 15 min. It enforces `MAX_ATTEMPTS` itself
+   (a hard crash never reaches `fail_job`): below the cap the job returns to
+   `queued` and its transcribe meeting to `queued`; at the cap both become
+   `failed` — a poison job cannot crash-loop and starve the queue. Then it
+   claims one job: `UPDATE jobs … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED
+   LIMIT 1 RETURNING …)`; the claim increments `attempts` and returns it, so
+   failure handling needs no second read. No job → sleep 2 s. No LISTEN/NOTIFY
+   yet (deliberate: polling is audit-cheap and self-host-simple).
+3. Job processing — resolve the meeting row (erroring out if gone), probe
+   duration with PyAV (no system ffmpeg), transcribe with faster-whisper
+   `small`/int8 on CPU (`vad_filter=True`), then replace
+   `transcript_segments` **in one transaction**: delete, insert
+   (`confidence = exp(avg_logprob)·100`), and stamp the meeting. A rejected
+   row or crash mid-write rolls the whole set back — the previous transcript
+   is never half-destroyed. Re-runs cannot collide with the unique
+   `(meeting_id, idx)` index.
 4. Degenerate-output filter (post-ASR, pre-summary — audit finding: never
    spend summary tokens on mush): empty set, mean confidence < 0.5, any
    exact line repeated > 8×, or >90% empty segments → `low_confidence`
    instead of `completed`. Segments are still kept for the user to read.
-5. Completion — `jobs.status=done`. Retry semantics: exception →
-   `last_error` recorded; attempts < 3 → back to the queue, ≥ 3 → `failed`
-   AND the meeting flips to `failed` (fail closed, visible in the UI).
+5. Completion — `jobs.status=done` only if the job is still `processing`
+   (a late finisher leaves a moved job untouched). Retry semantics:
+   exception → `last_error` recorded; attempts < 3 → job back to the queue
+   **and** the meeting to `queued`; ≥ 3 → job `failed` and the meeting flips
+   to `failed` (fail closed, visible in the UI). Job and meeting move in one
+   transaction. The transition is kind- and status-scoped: only a
+   `transcribe` job may touch meeting state, and only while the meeting is
+   still in flight — a late retry failure can never overwrite an already
+   completed transcript. Lease fencing for multiple workers is not
+   implemented (KI-15); one worker is the documented deployment.
 6. `/dashboard/meetings/<id>` — tenant-scoped read; another workspace's
    meeting id 404s (never leaks existence). Placeholder-Tailwind UI (KI-7).
 7. **Retention purge** (hourly in the same loop; differentiator) — deletes

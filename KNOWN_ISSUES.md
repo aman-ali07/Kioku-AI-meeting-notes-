@@ -44,6 +44,19 @@ is real and tracked; move items to CHANGELOG when fixed.
   `getWorkspaceContext(userId, workspaceId?)` already validates an explicit
   workspace for the future switcher. Changing a role currently requires a DB
   update, and there is no audit trail for it.
+- KI-15 **No queue lease fencing or heartbeat — one worker only.** The claim
+  is atomic (`FOR UPDATE SKIP LOCKED`), but transcript writes and
+  finish/fail are not fenced to the lease owner. With two workers, a worker
+  whose lease expired can still commit after another worker re-claimed the
+  job. Single worker is the documented deployment (compose v2 / dev box);
+  fencing (lease token checked on every write) is required before horizontal
+  scaling.
+- KI-16 **No retry backoff.** A failing transcribe job is re-queued
+  immediately and retried up to `MAX_ATTEMPTS = 3` in the same loop
+  iteration sequence; a permanently bad file can make three fast failures
+  (and three Whisper loads) before terminal `failed`. Acceptable at current
+  volume; backoff (or a `next_attempt_at` column) belongs with multi-worker
+  scheduling.
 
 ## Environment facts (this dev machine)
 

@@ -1,8 +1,9 @@
 """Kioku transcription pipeline — the Days 4–6 queue consumer.
 
 Single-process loop (spec decision):
-  1. Lease-watchdog: requeue `processing` jobs whose lease (locked_at) is
-     stale (>15 min) — a worker that died mid-job can't starve the queue.
+  1. Lease-watchdog: recover `processing` jobs whose lease (locked_at) is
+     stale (>15 min) — requeue below `MAX_ATTEMPTS`, fail terminally at the
+     cap so a hard-crashing job can't starve the queue.
   2. Claim one job atomically: UPDATE ... WHERE id = (SELECT ... FOR UPDATE
      SKIP LOCKED LIMIT 1 RETURNING ...). Safe with future multiple workers.
   3. Process: resolve meeting → probe duration (PyAV) → faster-whisper
@@ -19,6 +20,7 @@ import os
 import sys
 import time
 import unicodedata
+import uuid
 from collections import Counter
 
 import av  # PyAV — bundled FFmpeg libs; also faster-whisper's decoder
@@ -64,21 +66,106 @@ def connect():
             time.sleep(delay)
 
 
-def requeue_stale_leases(conn: psycopg.Connection) -> int:
-    """Jobs whose worker died (lease older than LEASE_STALE_SECONDS) go back
-    to the queue, attempts already counted. Returns requeued count."""
-    with conn.cursor() as cur:
+def _meeting_id(payload: object) -> str | None:
+    """Validated meeting id from a job payload, or None.
+
+    Job payloads are written by the app, but failure handling must not raise on
+    a malformed row: the job would then stay `processing` until the watchdog.
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            return None
+    if not isinstance(payload, dict):
+        return None
+
+    value = payload.get("meetingId")
+    if not isinstance(value, str):
+        return None
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return None
+    return value
+
+
+def _set_meeting_status_for_job(cur, kind: str, payload: object, status: str) -> None:
+    """Apply a job transition to its meeting, only when that is honest.
+
+    Non-transcribe jobs must never rewrite meeting state. A transcribe retry
+    marks the meeting `queued` only while it is still in flight; a terminal
+    failure does the same for `queued`/`processing`. A meeting that already
+    completed must keep its good transcript after a late retry failure.
+    """
+    if kind != "transcribe":
+        return
+    meeting_id = _meeting_id(payload)
+    if meeting_id is None:
+        return
+
+    if status == "failed":
         cur.execute(
             """
-            UPDATE jobs
-               SET status = 'queued', locked_at = NULL
+            UPDATE meetings SET status = 'failed'
+             WHERE id = %s AND status IN ('queued', 'processing')
+            """,
+            (meeting_id,),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE meetings SET status = %s
+             WHERE id = %s AND status = 'processing'
+            """,
+            (status, meeting_id),
+        )
+
+
+def requeue_stale_leases(conn: psycopg.Connection) -> tuple[int, int]:
+    """Recover jobs whose worker died mid-lease.
+
+    A hard crash never reaches fail_job, so the watchdog must enforce
+    MAX_ATTEMPTS itself — otherwise a poison job is requeued forever and,
+    being the oldest, starves every later job. Below the cap the job returns
+    to `queued` and its transcribe meeting back to `queued`; at the cap both
+    become terminal `failed`. Returns (requeued, failed).
+    """
+    requeued = 0
+    failed = 0
+    with conn.transaction(), conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, kind, payload, attempts
+              FROM jobs
              WHERE status = 'processing'
-               AND locked_at < now() - interval '%s seconds'
-            RETURNING id
+               AND locked_at < now() - make_interval(secs => %s)
+             FOR UPDATE SKIP LOCKED
             """,
             (LEASE_STALE_SECONDS,),
         )
-        return len(cur.fetchall())
+        stale = cur.fetchall()
+        for job_id, kind, payload, attempts in stale:
+            if attempts >= MAX_ATTEMPTS:
+                cur.execute(
+                    """
+                    UPDATE jobs
+                       SET status = 'failed', locked_at = NULL,
+                           last_error = COALESCE(last_error, 'lease expired')
+                     WHERE id = %s
+                    """,
+                    (job_id,),
+                )
+                _set_meeting_status_for_job(cur, kind, payload, "failed")
+                failed += 1
+            else:
+                cur.execute(
+                    "UPDATE jobs SET status = 'queued', locked_at = NULL WHERE id = %s",
+                    (job_id,),
+                )
+                _set_meeting_status_for_job(cur, kind, payload, "queued")
+                requeued += 1
+    return requeued, failed
 
 
 def claim_job(conn: psycopg.Connection):
@@ -97,56 +184,50 @@ def claim_job(conn: psycopg.Connection):
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                    )
-            RETURNING id, kind, payload
+            RETURNING id, kind, payload, attempts
             """
         )
         return cur.fetchone()
 
 
-def finish_job(conn: psycopg.Connection, job_id: str) -> None:
+def finish_job(conn: psycopg.Connection, job_id: str) -> bool:
+    """Mark a still-processing job done; False if it already moved on."""
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE jobs SET status = 'done', locked_at = NULL WHERE id = %s",
+            """
+            UPDATE jobs SET status = 'done', locked_at = NULL
+             WHERE id = %s AND status = 'processing'
+            """,
             (job_id,),
         )
+        return cur.rowcount == 1
 
 
 def fail_job(conn: psycopg.Connection, job_id: str, attempts: int, error: str) -> None:
-    """Terminal failure past MAX_ATTEMPTS; otherwise back to the queue."""
-    with conn.cursor() as cur:
-        if attempts >= MAX_ATTEMPTS:
-            cur.execute(
-                """
-                UPDATE jobs
-                   SET status = 'failed', locked_at = NULL, last_error = %s
-                 WHERE id = %s
-                """,
-                (error[:500], job_id),
-            )
-            # The meeting has no usable transcript — reflect it in the UI.
-            cur.execute(
-                """
-                UPDATE meetings
-                   SET status = 'failed'
-                 WHERE id = (SELECT (payload->>'meetingId')::uuid FROM jobs WHERE id = %s)
-                """,
-                (job_id,),
-            )
-        else:
-            cur.execute(
-                """
-                UPDATE jobs
-                   SET status = 'queued', locked_at = NULL, last_error = %s
-                 WHERE id = %s
-                """,
-                (error[:500], job_id),
-            )
+    """Record a failure and move the job/meeting together.
 
-
-def set_meeting_status(conn: psycopg.Connection, meeting_id: str, status: str) -> None:
-    with conn.cursor() as cur:
+    Below MAX_ATTEMPTS the job returns to the queue and its meeting to
+    `queued`; at the cap both become `failed`. The transition is one
+    transaction, and the status guard means a late failure cannot resurrect a
+    finished job or overwrite a completed transcript.
+    """
+    terminal = attempts >= MAX_ATTEMPTS
+    with conn.transaction(), conn.cursor() as cur:
         cur.execute(
-            "UPDATE meetings SET status = %s WHERE id = %s", (status, meeting_id)
+            """
+            UPDATE jobs
+               SET status = %s, locked_at = NULL, last_error = %s
+             WHERE id = %s AND status = 'processing'
+            RETURNING kind, payload
+            """,
+            ("failed" if terminal else "queued", error[:500], job_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return
+        kind, payload = row
+        _set_meeting_status_for_job(
+            cur, kind, payload, "failed" if terminal else "queued"
         )
 
 
@@ -197,6 +278,37 @@ def get_model():
     return _model
 
 
+def _write_transcript(
+    conn: psycopg.Connection,
+    meeting_id: str,
+    rows: list[tuple],
+    status: str,
+    duration_ms: int,
+) -> None:
+    """Replace the segment set and stamp the meeting in one transaction.
+
+    A crash or rejected row mid-write must leave the previous transcript
+    untouched — never a half-deleted set.
+    """
+    with conn.transaction(), conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM transcript_segments WHERE meeting_id = %s", (meeting_id,)
+        )
+        if rows:
+            cur.executemany(
+                """
+                INSERT INTO transcript_segments
+                     (meeting_id, idx, start_ms, end_ms, text, confidence)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                rows,
+            )
+        cur.execute(
+            "UPDATE meetings SET status = %s, duration_ms = %s WHERE id = %s",
+            (status, duration_ms, meeting_id),
+        )
+
+
 def process_job(conn: psycopg.Connection, job_id: str, payload: dict) -> None:
     meeting_id = (payload or {}).get("meetingId")
     if not meeting_id:
@@ -222,7 +334,16 @@ def process_job(conn: psycopg.Connection, job_id: str, payload: dict) -> None:
     if not os.path.isfile(path):
         raise RuntimeError(f"audio missing on disk: {audio_key}")
 
-    set_meeting_status(conn, meeting_id, "processing")
+    # Retries must not hide an already-good transcript while re-processing.
+    # Only in-flight states move to `processing`.
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE meetings SET status = 'processing'
+             WHERE id = %s AND status IN ('uploaded', 'queued', 'processing')
+            """,
+            (meeting_id,),
+        )
 
     duration = audio_duration_seconds(path)
     model = get_model()
@@ -239,25 +360,9 @@ def process_job(conn: psycopg.Connection, job_id: str, payload: dict) -> None:
         )
 
     # Re-runs (after a lease expiry) would collide with the unique (meeting_id,
-    # idx) — replace the segment set wholesale, then stamp the meeting.
+    # idx) — replace the segment set wholesale atomically, then stamp the meeting.
     status = _status_for(rows, confs)
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM transcript_segments WHERE meeting_id = %s", (meeting_id,)
-        )
-        if rows:
-            cur.executemany(
-                """
-                INSERT INTO transcript_segments
-                     (meeting_id, idx, start_ms, end_ms, text, confidence)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                rows,
-            )
-        cur.execute(
-            "UPDATE meetings SET status = %s, duration_ms = %s WHERE id = %s",
-            (status, int(duration * 1000), meeting_id),
-        )
+    _write_transcript(conn, meeting_id, rows, status, int(duration * 1000))
 
 
 def _status_for(rows, confs) -> str:
@@ -352,9 +457,13 @@ def main() -> None:
     try:
         while True:
             try:
-                requeued = requeue_stale_leases(conn)
-                if requeued:
-                    print(f"[pipeline] requeued {requeued} stale-lease job(s)", flush=True)
+                requeued, failed = requeue_stale_leases(conn)
+                if requeued or failed:
+                    print(
+                        f"[pipeline] stale leases: requeued {requeued}, "
+                        f"failed {failed} exhausted job(s)",
+                        flush=True,
+                    )
 
                 if time.time() - last_purge >= PURGE_INTERVAL_SECONDS:
                     purged = run_purge(conn)
@@ -367,19 +476,23 @@ def main() -> None:
                     time.sleep(POLL_SECONDS)
                     continue
 
-                job_id, kind, payload = job
-                attempts = 1  # claim incremented it; re-read for accuracy
-                with conn.cursor() as cur:
-                    cur.execute("SELECT attempts FROM jobs WHERE id = %s", (job_id,))
-                    attempts = cur.fetchone()[0]
+                job_id, kind, payload, attempts = job
                 print(f"[pipeline] claimed {kind} job {job_id} (attempt {attempts})", flush=True)
 
                 try:
                     if kind != "transcribe":
                         raise RuntimeError(f"unknown job kind: {kind}")
                     process_job(conn, job_id, payload if isinstance(payload, dict) else json.loads(payload))
-                    finish_job(conn, job_id)
-                    print(f"[pipeline] job {job_id} done", flush=True)
+                    if finish_job(conn, job_id):
+                        print(f"[pipeline] job {job_id} done", flush=True)
+                    else:
+                        # The transcript is committed; only the claim marker
+                        # moved (e.g. a second worker). Don't touch the job.
+                        print(
+                            f"[pipeline] job {job_id} was no longer processing; "
+                            "leaving its state untouched",
+                            flush=True,
+                        )
                 except Exception as exc:  # noqa: BLE001 — worker must survive any bad job
                     print(f"[pipeline] job {job_id} attempt {attempts} failed: {exc}", flush=True)
                     fail_job(conn, job_id, attempts, str(exc))

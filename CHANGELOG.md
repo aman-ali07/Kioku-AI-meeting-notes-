@@ -193,5 +193,29 @@ releases yet.
 - Evidence: `pnpm test` 37 passed (8 files); empty-string case seen red then
   green; typecheck + production build green.
 
+### Fixed — Phase 0A: queue state machine + atomic transcripts (2026-10-26)
+
+- **T-026:** the stale-lease watchdog now enforces `MAX_ATTEMPTS`. A job that
+  hard-crashes the worker is no longer requeued forever (crash-loop that
+  starved later jobs); below the cap job + meeting return to `queued`, at the
+  cap both fail terminally.
+- `fail_job` moves job and meeting in **one transaction**, only for
+  `transcribe` jobs, and only while the meeting is in flight — a late retry
+  failure can no longer overwrite a completed transcript or fail a meeting
+  from an unrelated job kind. Retries reset the meeting to `queued`.
+- Transcript replacement (delete + insert + meeting stamp) is one
+  transaction: a mid-write failure leaves the previous transcript and status
+  untouched instead of a half-deleted set.
+- `claim_job` returns the incremented attempt (no second read); `finish_job`
+  only settles a still-`processing` job.
+- Tests: `worker/tests/test_queue.py` (12 cases on an autocommit,
+  production-shaped connection) — 16 worker tests total. Red→green: removing
+  the transaction failed the rollback test, ignoring the cap failed the
+  terminal-stale test, dropping the kind/status guards failed two
+  meeting-state tests. Live `smoke-pipeline.sh` PASS (upload → `processing` →
+  `completed`, 1 segment row).
+- Docs: D20, ARCHITECTURE pipeline section, DATABASE, TASKS (T-026),
+  TESTING, KNOWN_ISSUES (KI-15 lease fencing, KI-16 retry backoff).
+
 ### Known gaps → see KNOWN_ISSUES.md (search is English/whole-word v1; no pagination).
 

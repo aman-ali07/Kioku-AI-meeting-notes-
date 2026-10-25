@@ -177,3 +177,25 @@ read-only.** The audit found `getPrimaryWorkspace` using an unordered
 **Revisit:** invites/role management must be owner-only; when more write
 endpoints exist, each one calls the same helper (enforced by review + tests).
 
+**D20 — Queue transitions are bounded, kind-scoped, and atomic.** The audit
+confirmed four defects in `worker/pipeline.py`: the stale-lease watchdog
+ignored `MAX_ATTEMPTS` (a hard-crashing job was requeued forever and, being
+oldest, starved the queue), failure handling updated meetings without checking
+job kind or meeting status (a future non-transcribe job could fail a meeting; a
+late retry could overwrite a completed transcript), retries left the meeting
+`processing` while the job was `queued` (invisible in the UI, exempt from
+purge), and transcript replacement ran as three autocommit statements (a
+mid-write failure could destroy the previous transcript).
+- Both failure paths (exception and stale lease) enforce the attempt cap; at
+  the cap the job and its transcribe meeting become `failed` terminally.
+- Only a `transcribe` job may touch meeting state, and only while the meeting
+  is in flight (`queued`/`processing`): a transition can never downgrade a
+  completed transcript.
+- Job and meeting move inside one transaction; a retry sets the meeting back
+  to `queued` so the UI and the retention exemption match reality.
+- Segment replacement plus the meeting stamp is one transaction, so the
+  previous transcript survives any failed re-write.
+**Revisit:** lease fencing/heartbeat and retry backoff are deliberately absent
+— both presuppose a multi-worker/cloud scheduler. Single worker is the
+documented deployment (KI-15, KI-16).
+

@@ -98,3 +98,38 @@ Read-only lens; no DB mutation.
 updates in one transaction, retry resets the meeting to `queued`, atomic
 transcript replacement, attempts returned from `claim_job`, and pytest
 coverage on an autocommit connection. Resolution entry follows the commit.
+
+## 2026-10-26 — resolution of the queue slice (P0-4, T-026)
+
+**Scope:** `worker/pipeline.py`, `worker/tests/test_queue.py`,
+`worker/tests/conftest.py`; docs corrected to describe the new semantics.
+Implementation review + test runs; no subagent audit was re-run for this
+resolve entry (the findings being closed are the ones recorded above).
+
+**Verdict: ship.** Every confirmed finding is closed and pinned by a test:
+
+- Crash-loop (P1) → watchdog enforces the cap: below it, job and meeting
+  return to `queued`; at it, both become `failed` with `last_error`
+  `lease expired`. Pinned by the terminal-stale and below-cap tests.
+- Non-atomic transcript replacement (P1) → `_write_transcript` wraps
+  delete/insert/meeting-stamp in one transaction. Pinned by a unique
+  violation on the second row: the old transcript and status survive.
+- Kind/status-blind failure (P1) → `_set_meeting_status_for_job` is
+  transcribe-only and status-guarded; a completed meeting and a non-transcribe
+  job each keep their state after a terminal failure. Pinned by two tests.
+- Retry state (P2) → retries set the meeting to `queued`. Pinned.
+- Two-statement failure update (P2) → one transaction, status-guarded, so a
+  late failure cannot resurrect a `done` job. Pinned.
+- Claim accounting (P2) → `claim_job` returns the incremented attempt; the
+  second read is gone. Pinned.
+- Multi-worker fencing (future-only P1) → deferred as **KI-15**; retry
+  backoff (confirmed absent) deferred as **KI-16**. Both are documented as
+  prerequisites for horizontal scaling, not silently accepted.
+
+**Evidence:** 16 worker tests pass (4 purge + 12 queue); three targeted red
+runs failed for the right reasons (transaction removal, cap ignored, guards
+removed) before restore; `smoke-pipeline.sh` PASS against a live dev server +
+worker; test DB left clean (`jobs=0`, `queue-test-workspaces=0`).
+
+**Next audit:** before the upload-atomicity slice (P0-5) — upload route,
+storage adapter, blob/DB failure ordering.
