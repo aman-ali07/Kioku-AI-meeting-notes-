@@ -23,3 +23,28 @@ export function isGoogleAuthConfigured(): boolean {
     process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
   );
 }
+
+/**
+ * Optional positive-integer env. Unset/empty means "not configured" (null);
+ * a malformed or non-positive value throws at the point of use — never
+ * silently coerce a typo into a wrong retention or quota.
+ */
+export function optionalPositiveIntEnv(name: string): number | null {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return null;
+
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(
+      `Invalid ${name}: expected a positive integer (got ${JSON.stringify(raw)})`,
+    );
+  }
+
+  const value = Number(trimmed);
+  if (value <= 0) {
+    throw new Error(
+      `Invalid ${name}: expected a positive integer (got ${JSON.stringify(raw)})`,
+    );
+  }
+  return value;
+}

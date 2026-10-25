@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { workspaceMembers, workspaces } from "@/db/schema";
+import { optionalPositiveIntEnv } from "@/env";
 
 /**
  * Idempotently guarantee a user belongs to at least one workspace, so any
@@ -37,7 +38,14 @@ export async function ensurePersonalWorkspace(userId: string): Promise<void> {
 
     const [workspace] = await tx
       .insert(workspaces)
-      .values({ name: "Personal", createdBy: userId })
+      .values({
+        name: "Personal",
+        createdBy: userId,
+        // Unset in self-host compose => NULL => never auto-delete. Cloud-free
+        // sets DEFAULT_RETENTION_DAYS=90. Existing workspaces are untouched:
+        // this only applies at first provisioning.
+        retentionDays: optionalPositiveIntEnv("DEFAULT_RETENTION_DAYS"),
+      })
       .returning({ id: workspaces.id });
 
     if (!workspace) {

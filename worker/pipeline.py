@@ -275,9 +275,11 @@ def run_purge(conn: psycopg.Connection) -> int:
     behind Enterprise and exports behind paid tiers; Kioku ships both free).
 
     Deletes audio on disk + meeting rows (segments cascade via FK) whose age
-    exceeds the workspace's retention_days policy. Deliberately excludes
-    queued/processing meetings: a purge must never race an active claim, so a
-    meeting being published right now is untouched even at retention_days=0.
+    exceeds the workspace's retention_days policy. NULL retention_days means
+    "keep forever" (the self-host default) and is never selected. Deliberately
+    excludes queued/processing meetings: a purge must never race an active
+    claim, so a meeting being published right now is untouched even at
+    retention_days=0.
     Queued jobs of purged meetings are deleted outright (nothing left to
     claim — a claim on a purged meeting could only fail); terminal job rows
     stay as the record that a pipeline ran.
@@ -293,6 +295,7 @@ def run_purge(conn: psycopg.Connection) -> int:
               FROM meetings m
               JOIN workspaces w ON w.id = m.workspace_id
              WHERE m.status IN ('uploaded', 'completed', 'low_confidence', 'failed')
+               AND w.retention_days IS NOT NULL
                AND m.created_at < now() - make_interval(days => w.retention_days)
             """
         )

@@ -9,6 +9,7 @@
 | `NEXTAUTH_URL` | app | yes | the public origin users visit (behind the proxy in selfhost) |
 | `STORAGE_DIR` | app + worker | yes | audio root; both MUST agree (app writes, worker reads) |
 | `WHISPER_MODEL` | worker | no | default `small` (the verified engine pin) |
+| `DEFAULT_RETENTION_DAYS` | app | no | new-workspace retention: unset/empty = forever (self-host default), `90` = cloud-free. Existing workspaces keep their stored value |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | app | no | env-gated Google sign-in; absent = feature absent |
 | `HF_HOME` | worker (container) | no | set by the image to `/models` (volume-persisted model cache) |
 
@@ -56,6 +57,12 @@ Facts that matter to an operator:
 - **First transcription downloads the model** (~460 MB) into the
   `model-cache` volume; expect the first job to take minutes, later jobs to
   reuse the cache.
+- **Retention defaults to forever on self-host**: leave
+  `DEFAULT_RETENTION_DAYS` empty (the compose default). Set it to `90` to
+  mirror cloud-free. Existing workspaces from before migration `0005` keep
+  their stored `90`; an operator who wants those meetings kept can run the
+  deliberate one-time `UPDATE workspaces SET retention_days = NULL;` after
+  confirming the policy.
 - Storage is a shared named volume (`audio:/data/audio` in both containers).
   S3/R2 behind the same 3-op adapter stays a planned swap (D15).
 - The `SITE`/`NEXTAUTH_URL` pair drives Caddy: a public DNS name gets

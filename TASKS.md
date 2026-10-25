@@ -50,6 +50,12 @@ Update this file whenever planning or implementation status changes.
 |---|---|---|---|
 | T-022 | FTS + trigram meeting search | done | Generated `tsvector` columns on `meetings.title` + `transcript_segments.text` with GIN indexes; `pg_trgm` title index (migrations `0003` extension + `0004` columns/indexes, applied and psql-verified); tenant-scoped `GET /api/search?q=` and `/dashboard?q=` with results grouped per meeting, highlighted snippets, and segment deep links. Evidence: `scripts/smoke-search.sh` PASS (title + transcript hits, one row despite two segment matches, **cross-tenant 0 rows**, 401/empty/1-char/201-char boundaries, dashboard render + `?seg=0` link); `EXPLAIN` shows Bitmap Index Scan on all three indexes; typecheck + build green |
 
+### Phase 0A — trust gate (in progress, 2026-10-25)
+
+| ID | Task | Status | Acceptance / evidence |
+|---|---|---|---|
+| T-023 | Retention `NULL = forever` + self-host default | done | Migration `0005` drops `NOT NULL DEFAULT 90`; `DEFAULT_RETENTION_DAYS` unset/empty at provisioning = `NULL` (self-host), `90` = cloud-free; purge query filters `retention_days IS NOT NULL`; dashboard/meeting page render “Forever”/“Kept indefinitely”. Evidence: `pnpm test` 15 passed (incl. provisioning integration against `kioku_test`: NULL when unset, 90 when set, malformed value fails closed); `cd worker && DATABASE_URL=…_test uv run pytest` 4 passed (NULL keeps old meeting, 90 purges 91-day-old, young survives, queued exempt); red→green proven by temporarily restoring `NOT NULL` in the test DB (provisioning + NULL-purge tests failed, then passed after `0005`); typecheck green; `0005` applied and `\d workspaces` shows nullable/no default |
+
 ## Blocked
 
 | ID | Task | Blocker | Acceptance when unblocked |
@@ -68,7 +74,7 @@ Update this file whenever planning or implementation status changes.
 | T-016 | Notes: summaries + action items + dashboard share pages (list/search delivered as T-022) | Days 11–13 | T-015 |
 | T-017 | Hosted metering + Paddle as merchant-of-record (Free 300 audio-min / Pro 4 000, self-host unlimited) | Days 8–13 | T-016 |
 | T-018 | Real email delivery (Brevo/Resend; replaces console transport) | ~Day 15 | — |
-| T-019 | Test suite (vitest/pytest) + CI; money/privacy paths red→green | ≥ Day 7 | — |
+| T-019 | Test suite (vitest/pytest) + CI; money/privacy paths red→green | **in-progress 2026-10-25** (vitest/pytest landed; CI next) | — |
 
 Rules: new unplanned features require explicit user approval (spec §13 is
 locked); each task ships as a PR-sized slice with checks run before "done".

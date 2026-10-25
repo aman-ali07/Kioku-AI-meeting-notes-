@@ -5,6 +5,7 @@ import { authOptions } from "@/auth";
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { getPrimaryWorkspace } from "@/lib/workspace";
+import { formatRetention } from "@/lib/retention";
 import {
   SEARCH_MAX_CHARS,
   SEARCH_MIN_CHARS,
@@ -110,7 +111,7 @@ export default async function DashboardPage({
               Plan: <span className="text-neutral-200">{primary.workspace.billingPlan}</span>
             </p>
             <p className="mt-1 text-sm text-neutral-400">
-              Retention: {primary.workspace.retentionDays} days
+              Retention: {formatRetention(primary.workspace.retentionDays)}
             </p>
           </section>
         ) : (

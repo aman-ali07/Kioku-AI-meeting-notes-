@@ -60,11 +60,16 @@ export default async function MeetingPage({
 
   // Retention is per-workspace policy; show the user exactly when the
   // auto-purge lands (the free-tier differentiator, visible not hidden).
-  const purgeDate = new Date(
-    meeting.createdAt.getTime() + primary.workspace.retentionDays * 86_400_000,
-  )
-    .toISOString()
-    .slice(0, 10);
+  // NULL is the self-host default: no automatic deletion.
+  const retentionDays = primary.workspace.retentionDays;
+  const purgeDate =
+    retentionDays === null
+      ? null
+      : new Date(
+          meeting.createdAt.getTime() + retentionDays * 86_400_000,
+        )
+          .toISOString()
+          .slice(0, 10);
 
   return (
     <main className="min-h-screen bg-neutral-900 p-8 text-neutral-100">
@@ -80,8 +85,17 @@ export default async function MeetingPage({
             : `${Math.round(meeting.durationMs / 1000)}s`}
         </p>
         <p className="mt-1 text-sm text-neutral-400">
-          Auto-purges on <span className="text-neutral-200">{purgeDate}</span> (
-          {primary.workspace.retentionDays}-day workspace retention).
+          {retentionDays === null ? (
+            <>
+              Kept indefinitely — this workspace has no auto-purge.
+            </>
+          ) : (
+            <>
+              Auto-purges on{" "}
+              <span className="text-neutral-200">{purgeDate}</span> (
+              {retentionDays}-day workspace retention).
+            </>
+          )}
         </p>
         <a
           href={`/api/meetings/${meeting.id}/export`}

@@ -141,3 +141,21 @@ would have made three. `scripts/lib/smoke-session.sh` now owns it. Both
 existing gates were re-run after the refactor (auth PASS, pipeline PASS) so
 the extraction is proven, not assumed.
 
+## 2026-10-25 — trust-gate decisions (Phase 0A)
+
+**D18 — Retention is optional; NULL means keep forever.** The approved spec
+promises 90 days on cloud-free and forever on self-host, but the original
+schema encoded `retention_days NOT NULL DEFAULT 90` for every workspace and
+provisioning never overrode it — a self-host data-loss bug. Migration `0005`
+drops the default and NOT NULL:
+- `NULL` = no automatic deletion (safe self-host default).
+- A positive integer = purge meetings older than N days. Cloud-free
+  provisioning sets 90 explicitly from `DEFAULT_RETENTION_DAYS`.
+- The purge query filters `retention_days IS NOT NULL`; the value is never
+  inferred from `billing_plan` at read time (one place, no drift).
+- Existing workspaces are **not** rewritten by the migration. A pre-`0005`
+  self-host box keeps its stored 90 until the operator deliberately updates
+  it (documented in DEPLOYMENT.md).
+**Revisit:** when the workspace settings UI lands, changing retention must be
+an owner-only, audited action; it is currently provisioning-time only.
+

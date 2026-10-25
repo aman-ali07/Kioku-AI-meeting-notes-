@@ -94,7 +94,10 @@ export const workspaces = pgTable("workspaces", {
     .$type<"free" | "pro" | "team" | "selfhost">()
     .notNull()
     .default("free"),
-  retentionDays: integer("retention_days").notNull().default(90),
+  // NULL = keep forever (the safe self-host default); a positive integer
+  // purges meetings older than that many days. Cloud-free provisioning sets
+  // 90 explicitly via DEFAULT_RETENTION_DAYS (see provision.ts).
+  retentionDays: integer("retention_days"),
   createdBy: text("created_by").references(() => users.id, {
     onDelete: "set null",
   }),

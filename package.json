@@ -6,6 +6,7 @@
     "dev": "pnpm --filter kioku-app dev",
     "build": "pnpm --filter kioku-app build",
     "typecheck": "pnpm --filter kioku-app typecheck",
+    "test": "pnpm --filter kioku-app test",
     "db:generate": "pnpm --filter kioku-app db:generate",
     "db:migrate": "pnpm --filter kioku-app db:migrate"
   }

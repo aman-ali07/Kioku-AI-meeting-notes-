@@ -148,5 +148,19 @@ releases yet.
   `transcript_segments_search_idx`, `meetings_search_idx`, and
   `meetings_title_trgm_idx`.
 
+### Fixed — Phase 0A: retention forever on self-host (2026-10-25)
+
+- **Data-loss fix (T-023):** `workspaces.retention_days` is now nullable;
+  `NULL` means keep forever. Migration `0005` drops the old
+  `NOT NULL DEFAULT 90`. New workspaces get `DEFAULT_RETENTION_DAYS` at
+  provisioning: unset/empty = forever (self-host default), `90` = cloud-free.
+  The worker purge filters `retention_days IS NOT NULL`; dashboard and meeting
+  pages render “Forever”/“Kept indefinitely” instead of `null days`.
+- **Test harness started:** `vitest` + `pytest`; `pnpm test` covers retention
+  formatting, env parsing, and provisioning against a `*_test` Postgres;
+  worker tests cover NULL/expired/young/queued purge behavior. CI is next.
+- Existing self-host workspaces keep their stored 90 until deliberately
+  changed; upgrade note added to DEPLOYMENT.md.
+
 ### Known gaps → see KNOWN_ISSUES.md (search is English/whole-word v1; no pagination).
 

@@ -4,7 +4,7 @@ Postgres-only. Schema source of truth: `app/src/db/schema.ts` (Drizzle,
 TypeScript). Python never owns DDL: the worker reads rows when the queue
 lands (Days 4–6) and must never `CREATE TABLE`.
 
-## Current tables (migrations `0000`–`0004` applied; schema source: `app/src/db/schema.ts`)
+## Current tables (migrations `0000`–`0005` applied; schema source: `app/src/db/schema.ts`)
 
 ### Auth.js adapter tables
 
@@ -29,9 +29,12 @@ Names/columns match `@auth/drizzle-adapter` documented defaults exactly, so
 - **`workspaces`** — `id` uuid PK default random; `name`; `billing_plan`
   text (`free` \| `pro` \| `team` \| `selfhost` — TS union widened for the
   pricing vocabulary; deliberately *no* DB CHECK constraint until billing
-  stabilizes, per the schema comment); `retention_days` int default 90;
-  `created_by` text nullable → user.id (set null on user delete); `created_at`
-  timestamptz default now.
+  stabilizes, per the schema comment); `retention_days` int **nullable** —
+  `NULL` means keep forever (the self-host default), a positive integer means
+  purge meetings older than that many days (cloud-free provisioning sets 90
+  via `DEFAULT_RETENTION_DAYS`); `created_by` text nullable → user.id (set
+  null on user delete); `created_at` timestamptz default now. Migration `0005`
+  dropped the old `NOT NULL DEFAULT 90`.
 - **`workspace_members`** — `workspace_id` → workspaces.id (cascade);
   `user_id` → user.id (cascade); `role` text one of
   `owner | member | viewer` (default `member`); `created_at`; unique index

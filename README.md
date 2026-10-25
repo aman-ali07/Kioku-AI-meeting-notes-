@@ -80,10 +80,12 @@ docker compose -f docker-compose.selfhost.yml up -d --build
 
 Same stack everywhere: standalone Next web, supervised transcription worker,
 Postgres with one-shot automatic migrations, a shared audio volume, and Caddy
-in front (automatic TLS when `SITE` is a public DNS name). Magic links print
-to `docker compose -f docker-compose.selfhost.yml logs -f web` until real
-email lands; the first transcription downloads the model (~460 MB) into a
-cached volume. The whole stack is provable:
+in front (automatic TLS when `SITE` is a public DNS name). **New self-host
+workspaces keep meetings forever by default** (`DEFAULT_RETENTION_DAYS`
+unset); set it to `90` to mirror the cloud-free policy. Magic links print to
+`docker compose -f docker-compose.selfhost.yml logs -f web` until real email
+lands; the first transcription downloads the model (~460 MB) into a cached
+volume. The whole stack is provable:
 
 ```sh
 bash scripts/smoke-selfhost.sh   # register → upload → transcribe → export through the proxy

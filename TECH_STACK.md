@@ -24,6 +24,7 @@ unverified package (slopsquatting risk).
 | tailwindcss + @tailwindcss/postcss | 4.3.3 | MIT | v4 via postcss plugin |
 | drizzle-kit | 0.31.11 | MIT | generate/migrate CLI |
 | tsx | 4.20.6 | MIT | runs `src/db/migrate.ts` (needs `"type": "module"`) |
+| vitest | 5.0.5 | MIT | app unit + Postgres integration tests (`pnpm test`); verified on npm 2026-10-25 |
 | @types/* (node 24.7.1, react 19.2.2, react-dom 19.2.1, nodemailer 7.0.4) | — | MIT/… | matching majors for the wheels above |
 
 ## Worker (`worker/pyproject.toml`, uv-managed, .python-version pins 3.12)
@@ -36,6 +37,7 @@ unverified package (slopsquatting risk).
 | python-dotenv | >=1.0 | BSD-3 | loads `worker/.env` (process env still wins) |
 | faster-whisper | ==1.2.1 (engine-local extra) | MIT | verified on PyPI 2026-10-23: current release, owner SYSTRAN/Guillaume Klein, wheel `py3-none-any`; decode via bundled FFmpeg (PyAV) — no system ffmpeg needed |
 | av | ==14.2.0 (engine-local extra) | Apache-2.0 | newest PyAV in faster-whisper's tested window — 15+ removed the `metadata_errors` kwarg faster-whisper still passes, and cp314 wheels only start at PyAV 15.1 (hence the 3.12 pin) |
+| pytest | >=9.1.1 (dev group) | MIT | worker queue/purge integration tests; verified 2026-10-25 |
 
 ## Infra & runtime
 
