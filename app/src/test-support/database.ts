@@ -5,6 +5,18 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 /** True when TEST_DATABASE_URL is set; DB suites skip otherwise. */
 export const hasTestDatabase = Boolean(TEST_DATABASE_URL);
 
+/**
+ * These suites insert and delete rows; a typo in the URL must never touch a
+ * real database. Exported so the rule itself is unit-tested.
+ */
+export function assertTestDatabaseName(name: string): void {
+  if (!name.endsWith("_test")) {
+    throw new Error(
+      `Refusing to run database tests against ${JSON.stringify(name)}; use a *_test database`,
+    );
+  }
+}
+
 let client: typeof import("@/db/client") | null = null;
 
 /**
@@ -21,14 +33,17 @@ export function useTestDatabase(): () => typeof import("@/db/client") {
     if (!TEST_DATABASE_URL) return;
 
     const dbName = new URL(TEST_DATABASE_URL).pathname.replace(/^\//, "");
-    if (!dbName.endsWith("_test")) {
-      throw new Error(
-        `Refusing to run database tests against ${JSON.stringify(dbName)}; use a *_test database`,
-      );
-    }
+    assertTestDatabaseName(dbName);
 
     process.env.DATABASE_URL = TEST_DATABASE_URL;
     client = await import("@/db/client");
+
+    // The URL string can lie (or DATABASE_URL may already have been read by a
+    // static import). Ask the live connection what database it actually is.
+    const [current] = await client.sql<{ name: string }[]>`
+      SELECT current_database() AS name
+    `;
+    assertTestDatabaseName(current?.name ?? "");
   });
 
   afterAll(async () => {

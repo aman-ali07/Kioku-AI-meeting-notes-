@@ -89,6 +89,7 @@ describeWithDb("workspace resolution", () => {
     await addMember(workspaceId, userId, "owner", new Date("2026-01-01"));
 
     expect(await getWorkspaceContext(userId, "not-a-uuid")).toBeNull();
+    expect(await getWorkspaceContext(userId, "")).toBeNull();
     expect(
       await getWorkspaceContext(userId, "00000000-0000-4000-8000-00000000000g"),
     ).toBeNull();

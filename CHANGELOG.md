@@ -179,5 +179,19 @@ releases yet.
   (403) and restored to owner (passed the gate) against the dev server.
 - Docs: D19, SECURITY, ARCHITECTURE, TASKS (T-024), KNOWN_ISSUES (KI-14).
 
+### Fixed — Phase 0A: id-validation audit follow-ups (2026-10-26)
+
+- **T-025:** shared strict `isUuid` (`app/src/lib/uuid.ts`) replaces two
+  divergent validators. The export route's old regex accepted 36 hyphens,
+  which reached Postgres as an invalid uuid and returned 500; it now returns
+  404 before the query. `getWorkspaceContext(userId, "")` now follows the
+  documented malformed-id contract (`null`) instead of silently resolving the
+  primary workspace.
+- Test-DB guard now asks the live connection `current_database()` as well as
+  checking the URL suffix, closing the static-import hole where
+  `DATABASE_URL` could already point at a non-test database.
+- Evidence: `pnpm test` 37 passed (8 files); empty-string case seen red then
+  green; typecheck + production build green.
+
 ### Known gaps → see KNOWN_ISSUES.md (search is English/whole-word v1; no pagination).
 

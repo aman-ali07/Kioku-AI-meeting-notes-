@@ -2,9 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import type { WorkspaceRole } from "@/db/schema";
 import { workspaceMembers, workspaces } from "@/db/schema";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from "@/lib/uuid";
 
 export type WorkspaceContext = {
   workspace: typeof workspaces.$inferSelect;
@@ -24,7 +22,7 @@ export async function getWorkspaceContext(
   userId: string,
   workspaceId?: string | null,
 ): Promise<WorkspaceContext | null> {
-  if (workspaceId && !UUID_RE.test(workspaceId)) return null;
+  if (workspaceId != null && !isUuid(workspaceId)) return null;
 
   const membership = workspaceId
     ? and(

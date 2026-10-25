@@ -6,13 +6,12 @@ import { db } from "@/db/client";
 import { meetings, transcriptSegments } from "@/db/schema";
 import { authOptions } from "@/auth";
 import { getPrimaryWorkspace } from "@/lib/workspace";
+import { isUuid } from "@/lib/uuid";
 import { storagePathFor } from "@/storage";
 import { writeZip } from "@/lib/export-zip";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const UUID_RE = /^[0-9a-fA-F-]{36}$/;
 
 /**
  * One-click full export (GET — plain <a> download, no client JS needed):
@@ -35,7 +34,7 @@ export async function GET(
   if (!primary) {
     return NextResponse.json({ error: "No workspace" }, { status: 403 });
   }
-  if (!UUID_RE.test(id)) {
+  if (!isUuid(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

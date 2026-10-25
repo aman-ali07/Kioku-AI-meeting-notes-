@@ -166,7 +166,8 @@ read-only.** The audit found `getPrimaryWorkspace` using an unordered
   `workspace_members` only. No id → oldest membership (`created_at`, then
   `workspace_id`) — one stable answer across dashboard, upload, and search.
   Explicit id → canonical-UUID check, then a membership lookup; foreign or
-  malformed ids return `null` (fail closed, never a default tenant).
+  malformed ids return `null` (fail closed, never a default tenant); an empty
+  string counts as malformed, not as "no selection".
 - `canWriteToWorkspace` is a pure policy helper (owner/member write, viewer
   read) so the rule is testable without a database and shared by future write
   paths. `POST /api/upload` applies it before reading the body (403
