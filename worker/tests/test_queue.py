@@ -72,6 +72,30 @@ class QueueRows:
                 "DELETE FROM workspaces WHERE name LIKE %s",
                 (f"{self.PREFIX}%",),
             )
+        self.assert_no_foreign_queue()
+
+    def assert_no_foreign_queue(self) -> None:
+        """The claim/watchdog queries are global; foreign jobs would make the
+        oldest-job assertions silently test someone else's data."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT count(*)
+                  FROM jobs
+                 WHERE payload->>'meetingId' NOT IN (
+                       SELECT m.id::text
+                         FROM meetings m
+                         JOIN workspaces w ON w.id = m.workspace_id
+                        WHERE w.name LIKE %s
+                       )
+                """,
+                (f"{self.PREFIX}%",),
+            )
+            foreign = cur.fetchone()[0]
+        assert foreign == 0, (
+            f"{foreign} job(s) outside {self.PREFIX}* would contaminate the "
+            "global claim/watchdog tests"
+        )
 
     def workspace(self) -> str:
         with self.conn.cursor() as cur:
@@ -86,8 +110,10 @@ class QueueRows:
         workspace_id: str,
         status: str = "queued",
         *,
-        audio_key: str | None = "queue-test/audio.wav",
+        audio_key: str | None = None,
     ) -> str:
+        if audio_key is None:
+            audio_key = f"queue-test/{uuid.uuid4()}.wav"
         with self.conn.cursor() as cur:
             cur.execute(
                 """
@@ -107,14 +133,16 @@ class QueueRows:
         status: str = "processing",
         attempts: int = 1,
         locked_at: datetime | None = None,
+        created_at: datetime | None = None,
     ) -> str:
         if locked_at is None and status == "processing":
             locked_at = datetime.now(timezone.utc)
         with self.conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO jobs (kind, payload, status, attempts, locked_at)
-                VALUES (%s, %s::jsonb, %s, %s, %s)
+                INSERT INTO jobs
+                     (kind, payload, status, attempts, locked_at, created_at)
+                VALUES (%s, %s::jsonb, %s, %s, %s, COALESCE(%s, now()))
                 RETURNING id
                 """,
                 (
@@ -123,6 +151,7 @@ class QueueRows:
                     status,
                     attempts,
                     locked_at,
+                    created_at,
                 ),
             )
             return cur.fetchone()[0]
@@ -187,7 +216,55 @@ def test_claim_job_returns_the_incremented_attempt(queue):
     assert claimed is not None
     assert claimed[0] == job
     assert claimed[3] == 2
-    assert _job_state(queue.conn, job)["status"] == "processing"
+    state = _job_state(queue.conn, job)
+    assert state["status"] == "processing"
+    assert state["attempts"] == 2
+    assert state["locked_at"] is not None
+
+
+def test_claim_job_takes_the_oldest_queued_job(queue):
+    workspace_id = queue.workspace()
+    older = queue.job(
+        queue.meeting(workspace_id),
+        status="queued",
+        attempts=0,
+        locked_at=None,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    newer = queue.job(
+        queue.meeting(workspace_id),
+        status="queued",
+        attempts=0,
+        locked_at=None,
+        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    )
+
+    claimed = pipeline.claim_job(queue.conn)
+
+    assert claimed is not None
+    assert claimed[0] == older
+    assert _job_state(queue.conn, newer)["status"] == "queued"
+
+
+def test_finish_job_settles_a_processing_job(queue):
+    meeting = queue.meeting(queue.workspace(), "processing")
+    job = queue.job(meeting, attempts=1)
+
+    assert pipeline.finish_job(queue.conn, job) is True
+
+    state = _job_state(queue.conn, job)
+    assert state["status"] == "done"
+    assert state["locked_at"] is None
+
+
+def test_finish_job_leaves_a_moved_job_alone(queue):
+    meeting = queue.meeting(queue.workspace(), "completed")
+    job = queue.job(meeting, status="done", attempts=1, locked_at=None)
+
+    assert pipeline.finish_job(queue.conn, job) is False
+
+    assert _job_state(queue.conn, job)["status"] == "done"
+    assert _meeting_status(queue.conn, meeting) == "completed"
 
 
 def test_fail_job_retry_requeues_and_resets_meeting(queue):
@@ -198,6 +275,7 @@ def test_fail_job_retry_requeues_and_resets_meeting(queue):
 
     state = _job_state(queue.conn, job)
     assert state["status"] == "queued"
+    assert state["attempts"] == 1
     assert state["locked_at"] is None
     assert state["last_error"] == "temporary"
     assert _meeting_status(queue.conn, meeting) == "queued"
@@ -209,7 +287,9 @@ def test_fail_job_terminal_fails_transcribe_meeting(queue):
 
     pipeline.fail_job(queue.conn, job, pipeline.MAX_ATTEMPTS, "boom")
 
-    assert _job_state(queue.conn, job)["status"] == "failed"
+    state = _job_state(queue.conn, job)
+    assert state["status"] == "failed"
+    assert state["last_error"] == "boom"
     assert _meeting_status(queue.conn, meeting) == "failed"
 
 
@@ -248,8 +328,33 @@ def test_fail_job_does_not_resurrect_a_finished_job(queue):
     assert _meeting_status(queue.conn, meeting) == "completed"
 
 
+def test_fail_job_tolerates_a_malformed_payload(queue):
+    meeting = queue.meeting(queue.workspace(), "processing")
+    with queue.conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO jobs (kind, payload, status, attempts)
+            VALUES ('transcribe', '{"meetingId": "not-a-uuid"}'::jsonb, 'processing', %s)
+            RETURNING id
+            """,
+            (pipeline.MAX_ATTEMPTS,),
+        )
+        job = cur.fetchone()[0]
+
+    try:
+        pipeline.fail_job(queue.conn, job, pipeline.MAX_ATTEMPTS, "bad payload")
+
+        assert _job_state(queue.conn, job)["status"] == "failed"
+        assert _meeting_status(queue.conn, meeting) == "processing"
+    finally:
+        # No meeting row references this job, so the prefix cleanup cannot
+        # find it; remove it explicitly or it outlives the test.
+        with queue.conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs WHERE id = %s", (job,))
+
+
 def test_write_transcript_rolls_back_a_partial_insert(queue):
-    meeting = queue.meeting(queue.workspace(), "completed")
+    meeting = queue.meeting(queue.workspace(), "processing")
     with queue.conn.cursor() as cur:
         cur.execute(
             """
@@ -270,7 +375,11 @@ def test_write_transcript_rolls_back_a_partial_insert(queue):
         pipeline._write_transcript(queue.conn, meeting, rows, "completed", 2000)
 
     assert _segment_texts(queue.conn, meeting) == ["old transcript"]
-    assert _meeting_status(queue.conn, meeting) == "completed"
+    # A leaked UPDATE would have stamped completed + duration 2000.
+    assert _meeting_status(queue.conn, meeting) == "processing"
+    with queue.conn.cursor() as cur:
+        cur.execute("SELECT duration_ms FROM meetings WHERE id = %s", (meeting,))
+        assert cur.fetchone()[0] is None
 
 
 def test_write_transcript_commits_segments_and_meeting_stamp(queue):

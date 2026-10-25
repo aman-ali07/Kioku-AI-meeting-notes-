@@ -28,6 +28,18 @@ def database_url() -> str:
             f"Refusing to run purge tests against {dbname!r}; use a *_test database",
             returncode=1,
         )
+
+    # The URL can lie or the server can be pointed elsewhere by pg_service/
+    # options; ask the live connection which database it actually is.
+    with psycopg.connect(url) as probe, probe.cursor() as cur:
+        cur.execute("SELECT current_database()")
+        live = cur.fetchone()[0]
+    if not live.endswith("_test"):
+        pytest.exit(
+            f"Refusing to run purge tests against live database {live!r}; "
+            "use a *_test database",
+            returncode=1,
+        )
     return url
 
 

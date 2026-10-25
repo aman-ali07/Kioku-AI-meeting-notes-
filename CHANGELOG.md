@@ -217,5 +217,30 @@ releases yet.
 - Docs: D20, ARCHITECTURE pipeline section, DATABASE, TASKS (T-026),
   TESTING, KNOWN_ISSUES (KI-15 lease fencing, KI-16 retry backoff).
 
+### Fixed — Phase 0A: atomic upload + pre-buffer size gate (2026-10-26)
+
+- **T-027:** `meetings` and `jobs` are now inserted in one transaction. A
+  failed job insert rolls the meeting back and deletes the blob, so a
+  `queued` meeting can no longer exist without a job (previously stuck at
+  “Queued” forever, exempt from purge). If the transaction throws but the
+  rows committed, the route re-checks the meeting row and keeps the audio.
+- Oversized declared bodies (`Content-Length` > 51 MiB) are rejected before
+  `request.formData()` buffers them; Caddy adds `request_body max_size 55MB`
+  for chunked uploads. The parsed 50 MiB file cap stays authoritative, and
+  the post-write over-limit branch now deletes its blob.
+- Storage adapter: writes stage to a temp file and rename on success (no
+  partial object after a failed stream); keys reject empty/NUL/backslash/
+  absolute/`..` forms and are contained under `STORAGE_DIR`.
+- Tests: upload happy path (meeting + job + blob), injected jobs-insert
+  failure via a Postgres trigger, declared-oversize precheck, storage
+  round-trip/guards/stream-error; upload tests clean their jobs so the
+  global queue tests cannot claim leftovers; 20 worker tests (finish_job,
+  claim ordering, malformed payload, non-vacuous rollback assertions) and
+  48 app tests. Red→green for the transaction, precheck, and atomic write.
+  Live `smoke-pipeline.sh` PASS: a job row exists right after upload, the
+  worker claims it, and the meeting reaches `completed` with 1 segment.
+- Docs: D21, ARCHITECTURE upload section, TASKS (T-027), TESTING,
+  KNOWN_ISSUES (KI-17 orphan-blob GC, KI-18 spec §8 preflight).
+
 ### Known gaps → see KNOWN_ISSUES.md (search is English/whole-word v1; no pagination).
 

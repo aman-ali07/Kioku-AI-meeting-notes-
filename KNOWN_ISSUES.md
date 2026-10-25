@@ -57,6 +57,19 @@ is real and tracked; move items to CHANGELOG when fixed.
   (and three Whisper loads) before terminal `failed`. Acceptable at current
   volume; backoff (or a `next_attempt_at` column) belongs with multi-worker
   scheduling.
+- KI-17 **No orphan-blob GC.** Uploads write the audio before the DB row; a
+  process kill in that window leaves a file with no meeting row. Failed
+  cleanups are logged and not retried, and purge only walks meeting rows.
+  Disk usage can grow silently until a grace-period sweep (list
+  `STORAGE_DIR`, delete files unreferenced by `meetings.audio_key` and older
+  than ~24 h) lands.
+- KI-18 **No ingest preflight or upload caps (spec §8).** Upload checks the
+  extension, client MIME, and size, but not magic bytes or audio duration;
+  there is no per-IP/per-workspace upload quota. A 50 MiB undecodable file
+  can occupy the single worker for up to three attempts, and a member can
+  fill the audio volume. The spec's per-IP cap and ≤3 h duration sanity are
+  required before a public cloud launch; self-host stays intentionally
+  unlimited.
 
 ## Environment facts (this dev machine)
 

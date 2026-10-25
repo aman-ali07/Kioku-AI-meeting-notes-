@@ -133,3 +133,85 @@ worker; test DB left clean (`jobs=0`, `queue-test-workspaces=0`).
 
 **Next audit:** before the upload-atomicity slice (P0-5) — upload route,
 storage adapter, blob/DB failure ordering.
+
+## 2026-10-26 — four-lens audit before the upload slice (P0-5)
+
+**Scope:** repository at `7d7c6f7`; focus on the upload path, storage adapter,
+queue/retention interactions, tests, and docs claims. Four parallel read-only
+subagents (architecture/data, security/tenancy, quality/verification,
+product/docs); no test or DB mutation run by the lenses.
+
+**Verdict: ship-with-fixes.** No auth bypass, cross-tenant attach, path
+escape, stored XSS, or committed secret. The upload P0 is the known one.
+
+- **P0 upload atomicity (lens 1+2):** `meetings` and `jobs` are inserted as
+  two statements. If `jobs` fails (or the process dies between them), the
+  blob is deleted but the committed `queued` meeting remains — no job, dead
+  `audio_key`, invisible to purge (queued is exempt), “Queued” forever.
+- **P1 pre-buffer limit (lens 2):** `request.formData()` materializes the
+  whole multipart body before the 50 MiB check; no reverse-proxy body cap.
+  Authenticated memory-DoS. Fix: `Content-Length` precheck + Caddy
+  `request_body` cap (verify the pinned Caddy supports it).
+- **P1 missing upload tests (lens 3):** only the three role-boundary cases
+  exist; no happy path, no jobs-insert failure, no oversize-before-buffering.
+  Upload tests must delete `jobs` by `payload->>'meetingId'` before the
+  workspace (no FK), or they seed orphan jobs for the global queue tests.
+- **P1 test gaps in the queue slice (lens 3):** `finish_job` untested; the
+  rollback test's meeting-status assertion is vacuous (`completed`→
+  `completed`); `claim_job` persisted attempts untested; `fail_job` retry
+  attempts untested; queue fixture does not prove the global queue is clean;
+  shared `audio_key` across queue meetings. Worker test-DB guard is URL-only.
+  Documented `uv run pytest` misses the `engine-local` extra (`av`).
+- **P1 docs truth (lens 4):** README/landing still claim recording,
+  summaries, action items, share pages, and a live $6 hosted offer; none
+  exist. PRD status tags drifted. Duplicate stale KI-8. Phase 0A header says
+  “in progress” with all rows done; P0-5/P0-6/docs/tag have no TASKS row.
+- **P2s:** post-write 413 branch leaks the blob (likely unreachable today);
+  storage adapter leaves a partial file on stream error; `assertSafeKey`
+  checks the literal `\\0` and not path containment; export buffers the whole
+  zip; worker image runs as root; no orphan-blob GC; `.env.example` embeds a
+  developer absolute path; app test helper leaks `globalThis`/env state.
+  Queue semantics themselves are consistent across docs.
+
+**Slice order:** P0-5 upload atomicity + pre-buffer cap + upload/queue test
+hygiene first; then P0-6 auth rate limit; then CI (0B); then the docs-truth
+pass and `v0.1.0` tag (0C), which owns the README/PRD/KI corrections. Orphan
+blob GC is deferred as a KI until the docs slice.
+
+## 2026-10-26 — resolution of the upload slice (P0-5, T-027)
+
+**Scope:** `app/src/app/api/upload/route.ts`, `app/src/storage.ts`,
+`app/src/app/api/upload/route.test.ts`, `app/src/storage.test.ts`,
+`docker/Caddyfile`, plus the queue test hygiene from lens 3. Read-only lens
+reviews above; this entry records fixes + runs only.
+
+**Verdict: ship.** P0 and both P1 upload findings are closed:
+
+- **Atomic meeting+job (P0)** → one Drizzle transaction; injected `jobs`
+  trigger failure leaves 0 meetings and 0 files. Ambiguous-commit guard
+  re-reads the meeting before deleting audio. Red→green proven by restoring
+  two separate inserts (test failed with one meeting).
+- **Pre-buffer size gate (P1)** → `Content-Length > 51 MiB` returns 413
+  before `formData()`; Caddy `request_body max_size 55MB` validated by
+  `caddy validate`. Red→green: removing the precheck returned 400. Parsed
+  50 MiB cap remains authoritative; the post-write branch now deletes.
+- **Storage integrity (P2 promoted into the slice)** → temp-file + rename
+  writes; NUL/backslash/absolute/`..` keys rejected and root-contained.
+  Red→green: direct write left a partial file after a stream error.
+- **Test hygiene (P1 lens-3)** → upload suite deletes its jobs before the
+  workspace (no FK); queue fixture asserts no foreign queued/processing jobs
+  (fail loud, not silent contamination); unique audio keys; `finish_job`,
+  claim ordering/persisted attempts, malformed payload, and non-vacuous
+  rollback assertions added; worker DB guard checks `current_database()`;
+  documented worker test command includes `--extra engine-local`.
+- **Docs** → D21, ARCHITECTURE, TASKS (T-027), TESTING, CHANGELOG. KI-17
+  (orphan-blob GC) and KI-18 (spec §8 preflight) are explicit deferrals.
+
+**Evidence:** 48 app tests (9 files), 20 worker tests (4 purge + 16 queue),
+`pnpm typecheck` and production build green; Caddy config valid. Live
+`smoke-pipeline.sh` PASS after the change: the job row is asserted
+immediately after upload (`queued`), the worker claims it, and the meeting
+reaches `completed` with 1 transcript segment.
+
+**Next audit:** before the auth-edge slice (P0-6) — magic-link request path,
+token table growth, console transport, JWT lifetime.

@@ -199,3 +199,26 @@ mid-write failure could destroy the previous transcript).
 — both presuppose a multi-worker/cloud scheduler. Single worker is the
 documented deployment (KI-15, KI-16).
 
+
+**D21 — Upload writes the blob first, then commits meeting + job atomically.**
+The audit found the meeting and job inserted as two statements: a failed job
+insert left a committed `queued` meeting with a deleted audio key and no job
+— invisible to the worker and exempt from purge, so stuck at “Queued”
+forever.
+- The fs adapter stages writes in a sibling temp file and renames on success;
+  a failed stream leaves neither a partial destination nor temp debris.
+- `meetings` + `jobs` are inserted in one Drizzle transaction. Any failure
+  rolls both back and the route deletes the blob.
+- On an ambiguous commit (transaction threw but rows committed), the route
+  re-checks for the meeting row and keeps the audio — an orphan blob is
+  recoverable; a job pointing at deleted audio is not.
+- Oversized bodies are rejected from `Content-Length` before multipart
+  parsing; Caddy enforces a 55 MB `request_body` backstop for chunked
+  uploads. The parsed `file.size` remains authoritative (50 MiB).
+- Keys reject empty/NUL/backslash/absolute/`..` forms and are resolved under
+  `STORAGE_DIR`; this is defense in depth, not the primary control (keys are
+  server-generated).
+**Revisit:** orphan-blob GC (files with no meeting row after a process kill)
+and the spec §8 preflight (magic bytes, duration ≤3 h, per-IP upload caps)
+are not implemented — KI-17/KI-18. Both are required before a public cloud
+launch, not for the current single-tenant posture.

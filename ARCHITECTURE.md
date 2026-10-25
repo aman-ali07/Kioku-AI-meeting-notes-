@@ -109,17 +109,24 @@ saas/
 
 1. `POST /api/upload` — session → `getPrimaryWorkspace` tenant guard →
    `canWriteToWorkspace` role guard (viewer → 403 before the body is read) →
-   boundary checks (type allowlist, ≤50 MB, non-empty) → server-generated
-   key `<workspaceId>/<meetingId>.<ext>` → write via the fs adapter
-   (`STORAGE_DIR`, with a `..`-escape guard) → `meetings` row
-   (`status=queued`) → `jobs` row (`kind=transcribe`,
-   `payload={meetingId}`). A DB failure after a successful file write cleans
-   up the orphan file; the on-disk size is re-verified as ground truth.
+   a declared `Content-Length` over 51 MiB is rejected **before**
+   `request.formData()` buffers it → boundary checks (type allowlist,
+   ≤50 MiB, non-empty) → server-generated key
+   `<workspaceId>/<meetingId>.<ext>` → atomic write via the fs adapter
+   (`STORAGE_DIR`; temp file + rename, with `..`/NUL/root-escape guards) →
+   **one transaction** inserts the `meetings` row (`status=queued`) and the
+   `jobs` row (`kind=transcribe`, `payload={meetingId}`). If the transaction
+   fails, the blob is removed; if the commit succeeds but the response path
+   errors, the audio is kept (the job is real). No orphan meeting can exist
+   without its job. The on-disk size is re-verified as ground truth; an
+   over-limit blob is deleted on the spot. Orphan blobs from a process kill
+   before the row insert are not yet swept (KI-17).
 2. `worker/pipeline.py` loop — the watchdog first recovers `processing` jobs
    whose `locked_at` is older than 15 min. It enforces `MAX_ATTEMPTS` itself
    (a hard crash never reaches `fail_job`): below the cap the job returns to
-   `queued` and its transcribe meeting to `queued`; at the cap both become
-   `failed` — a poison job cannot crash-loop and starve the queue. Then it
+   `queued` and its transcribe meeting to `queued` (only while it is still in
+   flight — a completed transcript is never downgraded); at the cap both
+   become `failed` — a poison job cannot crash-loop and starve the queue. Then it
    claims one job: `UPDATE jobs … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED
    LIMIT 1 RETURNING …)`; the claim increments `attempts` and returns it, so
    failure handling needs no second read. No job → sleep 2 s. No LISTEN/NOTIFY

@@ -5,5 +5,10 @@
 # mapped port) reaches the same :80 listener. One upstream.
 {$SITE} {
 	encode zstd gzip
+	# Backstop for chunked uploads without Content-Length; the route also
+	# rejects an oversized declared body before parsing it.
+	request_body {
+		max_size 55MB
+	}
 	reverse_proxy {$WEB_UPSTREAM:-web:3000}
 }

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { jobs, meetings } from "@/db/schema";
 import { authOptions } from "@/auth";
@@ -13,9 +14,14 @@ import { deleteStorageObject, putStorageObject } from "@/storage";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Generous for a 1-hour meeting at speech bitrates; the ground-truth disk
-// check in putStorageObject backstops browser-reported sizes anyway.
+// Generous for a 1-hour meeting at speech bitrates. The server-parsed
+// File.size is authoritative; the on-disk size is rechecked after the write.
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+// Multipart framing + the title field add a little to the file itself. The
+// header check below runs before the body is buffered; the parsed file size
+// remains authoritative.
+const MAX_REQUEST_BYTES = MAX_UPLOAD_BYTES + 1024 * 1024;
+const TOO_LARGE = { error: "File too large (max 50 MB)" };
 
 // What faster-whisper (PyAV) can decode. Types vary by browser/OS (m4a is
 // audio/mp4 on some, audio/x-m4a on others), so this is an allowlist, not one
@@ -63,6 +69,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Read-only workspace" }, { status: 403 });
   }
 
+  // Reject an oversized declared body before `formData()` buffers it. Chunked
+  // requests have no Content-Length; the reverse proxy's request_body cap is
+  // the backstop for those (docker/Caddyfile).
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    return NextResponse.json(TOO_LARGE, { status: 413 });
+  }
+
   let form: FormData;
   try {
     form = await request.formData();
@@ -78,10 +92,7 @@ export async function POST(request: NextRequest) {
     return badRequest("Empty file");
   }
   if (file.size > MAX_UPLOAD_BYTES) {
-    return NextResponse.json(
-      { error: "File too large (max 50 MB)" },
-      { status: 413 },
-    );
+    return NextResponse.json(TOO_LARGE, { status: 413 });
   }
 
   const extension = file.name.split(".").pop()?.toLowerCase();
@@ -109,19 +120,19 @@ export async function POST(request: NextRequest) {
   try {
     const { size } = await putStorageObject(audioKey, file.stream());
     if (size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json(
-        { error: "File too large (max 50 MB)" },
-        { status: 413 },
-      );
+      await deleteStorageObject(audioKey);
+      return NextResponse.json(TOO_LARGE, { status: 413 });
     }
     if (size === 0) {
       await deleteStorageObject(audioKey);
       return badRequest("Empty file");
     }
 
-    const [meeting] = await db
-      .insert(meetings)
-      .values({
+    // One transaction: a meeting must never commit without its job. The
+    // worker only claims jobs, and purge exempts `queued` meetings — an
+    // orphan row would sit at "Queued" forever with a dead audio key.
+    await db.transaction(async (tx) => {
+      await tx.insert(meetings).values({
         id: meetingId,
         workspaceId: primary.workspace.id,
         title,
@@ -130,24 +141,34 @@ export async function POST(request: NextRequest) {
         audioKey,
         createdBy: userId,
         startedAt: new Date(),
-      })
-      .returning({ id: meetings.id });
+      });
 
-    if (!meeting) {
-      throw new Error("Meeting insert returned no row");
-    }
-
-    await db.insert(jobs).values({
-      kind: "transcribe",
-      payload: { meetingId },
+      await tx.insert(jobs).values({
+        kind: "transcribe",
+        payload: { meetingId },
+      });
     });
 
     return NextResponse.json({ meetingId, sizeBytes: size });
   } catch (error) {
-    // Don't leave an orphan audio file behind when the DB path failed.
-    await deleteStorageObject(audioKey).catch((cleanup) => {
-      console.error("[upload] orphan-file cleanup failed:", cleanup);
-    });
+    // Unlink only when the rows did not commit. An ambiguous commit means the
+    // upload actually succeeded; deleting its audio would strand the job.
+    const committed = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(eq(meetings.id, meetingId))
+      .limit(1)
+      .then((rows) => rows.length > 0)
+      .catch(() => null);
+
+    if (committed === false) {
+      await deleteStorageObject(audioKey).catch((cleanup) => {
+        console.error("[upload] orphan-file cleanup failed:", cleanup);
+      });
+    } else if (committed === null) {
+      console.error("[upload] could not verify the commit; leaving audio for GC");
+    }
+
     console.error("[upload] failed:", error);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }

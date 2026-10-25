@@ -17,7 +17,7 @@ source "$SCRIPT_DIR/lib/smoke-session.sh"
 
 BASE_URL="${1:-http://localhost:3000}"
 SMOKE_LOG="${SMOKE_LOG:-/tmp/opencode/kioku-dev.log}"
-EMAIL="pipe-$(date +%H%M%S)@kioku.test"
+EMAIL="pipe-$(date +%s)-$$@kioku.test"
 JAR="$(mktemp /tmp/opencode/kioku-smoke-pipe-jar.XXXXXX)"
 FIXTURE="/tmp/opencode/kioku-jfk.wav"
 trap 'rm -f "$JAR"' EXIT
@@ -49,6 +49,13 @@ data = json.load(sys.stdin)
 print(data["meetingId"])') || die "upload response unreadable: $resp"
 [[ "$mid" =~ ^[0-9a-fA-F-]{36}$ ]] || die "not a meeting id: $mid"
 echo "✓ uploaded (meeting $mid)"
+
+# The upload is only half the contract: the job row is what the worker claims.
+job_state=$(docker compose exec -T db psql -U kioku -d kioku -tA \
+  -c "SELECT status FROM jobs WHERE payload->>'meetingId' = '$mid'") \
+  || die "job lookup failed"
+[ -n "$job_state" ] || die "upload committed no job row for meeting $mid"
+echo "✓ job queued ($job_state)"
 
 # --- Poll for a terminal meeting state ---
 first_status=""

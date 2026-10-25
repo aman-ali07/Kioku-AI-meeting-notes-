@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
@@ -21,14 +22,26 @@ export function storageDir(): string {
 
 /** Fail early with a non-sensitive message if a key looks like a path escape. */
 function assertSafeKey(key: string): void {
-  if (key.includes("..") || key.startsWith("/") || key.includes("\\0")) {
+  if (
+    !key ||
+    key.includes("\0") ||
+    key.includes("\\") ||
+    key.startsWith("/") ||
+    key.split("/").includes("..")
+  ) {
     throw new Error(`Invalid storage key: ${key.slice(0, 24)}…`);
   }
 }
 
 export function storagePathFor(key: string): string {
   assertSafeKey(key);
-  return path.join(storageDir(), key);
+  const root = path.resolve(storageDir());
+  const dest = path.resolve(root, key);
+  // Defense in depth: even if the key rules above drift, never leave the root.
+  if (dest !== root && !dest.startsWith(root + path.sep)) {
+    throw new Error(`Storage key escapes the root: ${key.slice(0, 24)}…`);
+  }
+  return dest;
 }
 
 export async function putStorageObject(
@@ -40,10 +53,18 @@ export async function putStorageObject(
   // Readable.fromWeb's typing vs undici streams is awkward across versions —
   // one explicit cast at the boundary is clearer than sprinkling any.
   const nodeStream = Readable.fromWeb(stream as never);
-  await pipeline(nodeStream, createWriteStream(dest));
-  const info = await stat(dest);
-  // Trust but verify: browsers report sizes, disk is ground truth.
-  return { size: info.size };
+  // Write beside the destination and rename on success: a failed stream must
+  // never leave a partial file where a reader (or a retry) expects a whole one.
+  const temp = `${dest}.${randomUUID()}.part`;
+  try {
+    await pipeline(nodeStream, createWriteStream(temp));
+    const info = await stat(temp);
+    await rename(temp, dest);
+    return { size: info.size };
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 export function getStorageObject(key: string): ReturnType<typeof createReadStream> {
